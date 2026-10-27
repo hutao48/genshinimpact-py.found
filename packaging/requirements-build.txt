@@ -1,0 +1,6 @@
+# Windows 打包环境（固定版本，本地与 GitHub Actions 一致）
+numpy==2.2.6
+PySide6-Essentials==6.12.0
+pyqtgraph==0.14.0
+soundcard==0.4.6
+pyinstaller==6.21.0

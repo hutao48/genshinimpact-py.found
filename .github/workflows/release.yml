@@ -1,0 +1,131 @@
+# 构建与发布
+#   推送形如 v1.0.0 的 tag：构建 Windows（单文件 exe + 安装程序）与 Android（APK），并发布到 GitHub Releases
+#   手动运行（Actions → 构建与发布 → Run workflow）：只构建、上传为 Artifacts，不发布
+#
+# Android 正式签名（可选）：在仓库 Settings → Secrets and variables → Actions 中配置
+#   ANDROID_KEYSTORE_BASE64（keystore 文件的 base64）、ANDROID_KEYSTORE_PASSWORD、ANDROID_KEY_ALIAS、ANDROID_KEY_PASSWORD
+#   未配置时用 CI 临时生成的调试密钥签名（可直接安装，但每次构建签名不同，升级需先卸载旧版）
+name: 构建与发布
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows（exe + 安装程序）
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: packaging/requirements-build.txt
+
+      - name: 安装打包依赖
+        run: python -m pip install -r packaging/requirements-build.txt
+
+      - name: 准备 Inno Setup 6
+        shell: pwsh
+        run: |
+          $found = (Get-Command iscc -ErrorAction SilentlyContinue) -or (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe") -or (Test-Path "$env:ProgramFiles\Inno Setup 6\ISCC.exe")
+          if (-not $found) { choco install innosetup --no-progress -y }
+
+      - name: 测试并打包
+        shell: pwsh
+        run: ./packaging/build_windows.ps1 -Python python
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            dist/GenshinInstrumentDetector-*-win64-portable.exe
+            dist/GenshinInstrumentDetector-*-win64-setup.exe
+            dist/SHA256SUMS-windows.txt
+          if-no-files-found: error
+
+  android:
+    name: Android（APK）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: 准备发布签名（可选）
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+            echo "使用仓库 Secrets 中的正式密钥签名"
+          else
+            echo "未配置签名 Secrets：使用调试密钥签名"
+          fi
+
+      - name: 构建 APK
+        working-directory: android_app
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: gradle --no-daemon assembleRelease
+
+      - name: 整理产物
+        run: |
+          VER=$(python3 -c "import app_version; print(app_version.APP_VERSION)")
+          mkdir -p out
+          cp android_app/app/build/outputs/apk/release/app-release.apk "out/GenshinInstrumentDetector-$VER-android.apk"
+          (cd out && sha256sum *.apk > SHA256SUMS-android.txt)
+          ls -l out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: out/*
+          if-no-files-found: error
+
+  release:
+    name: 发布到 Releases
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, android]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: 合并校验和
+        run: |
+          cat artifacts/SHA256SUMS-*.txt | tr -d '\r' > artifacts/SHA256SUMS.txt
+          rm artifacts/SHA256SUMS-*.txt
+          ls -l artifacts
+          cat artifacts/SHA256SUMS.txt
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: 原神乐器演奏检测器 ${{ github.ref_name }} 正式版
+          body_path: packaging/release_notes.md
+          files: artifacts/*
+          draft: false
+          prerelease: false
+          make_latest: true

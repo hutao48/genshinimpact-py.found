@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 打包产物（发布到 GitHub Releases，不进仓库）
+/build/
+/dist/
+/原神乐器演奏检测器/build/
+
+# Android 构建产物与本机配置
+android_app/.gradle/
+android_app/build/
+android_app/app/build/
+android_app/local.properties
+*.apk
+*.aab
+*.jks
+*.keystore

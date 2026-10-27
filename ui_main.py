@@ -15,9 +15,19 @@ from PySide6.QtWidgets import (
 import pyqtgraph as pg
 
 from instruments import all_instruments, midi_to_name
-from detection import NoteDetector
+from detection import NoteDetector, END_REASON_TEXT
 from audio_capture import AudioCapture, list_sources, default_loopback_id
+from app_version import APP_NAME, APP_VERSION
 import diag
+
+
+def _resource_path(name):
+    """打包后资源在 PyInstaller 解压目录（sys._MEIPASS），源码运行时在 packaging/ 下"""
+    import os
+    base = getattr(sys, "_MEIPASS", None)
+    if base and os.path.exists(os.path.join(base, name)):
+        return os.path.join(base, name)
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "packaging", name)
 
 # ---------------------------------------------------------------- 主题色
 C_BG = "#1c1d21"
@@ -236,7 +246,7 @@ class DetectWorker(QThread):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("原神乐器演奏检测器 v2.0.2 — 按键 / 和弦 / 调性 / 音长 / BPM")
+        self.setWindowTitle(f"{APP_NAME} v{APP_VERSION} — 按键 / 和弦 / 调性 / 音长 / BPM")
         self.resize(1180, 860)
         self.worker = None
         self.instruments = all_instruments()
@@ -354,9 +364,13 @@ class MainWindow(QMainWindow):
         # ---- 音符时长表
         grp_tab = QGroupBox("每个音的具体时长（最近 500 条）")
         vt = QVBoxLayout(grp_tab)
-        self.table = QTableWidget(0, 6)
+        self.table = QTableWidget(0, 7)
         self.table.setHorizontalHeaderLabels(
-            ["开始时间(s)", "按键", "音名", "唱名", "时长(ms)", "备注"])
+            ["开始时间(s)", "按键", "音名", "唱名", "时长(ms)", "间隔(ms)", "备注"])
+        self.table.horizontalHeaderItem(4).setToolTip(
+            "起音 → 结束。备注为「松键/截止」时即按键时长；「同键重按」时为到再次按下的时间；\n"
+            "「自然衰减」表示拨弦类余音自然消失，松键时刻在声音里不可观测，此时长是余音长度")
+        self.table.horizontalHeaderItem(5).setToolTip("与上一个起音的间隔（和弦算一次起音），BPM 由它计算")
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -488,10 +502,17 @@ class MainWindow(QMainWindow):
     def on_note(self, ev):
         row = 0
         self.table.insertRow(row)
+        notes = []
+        if ev.get("end"):
+            notes.append(END_REASON_TEXT.get(ev["end"], ev["end"]))
+        if ev.get("approx"):
+            notes.append("≈吸附")
+        ioi = ev.get("ioi_ms")
         vals = [
-            f"{ev['t']:.2f}", ev["key"], ev["name"], ev["solfege"] or "—",
+            f"{ev['t']:.3f}", ev["key"], ev["name"], ev["solfege"] or "—",
             f"{ev['dur_ms']:.0f}",
-            "≈吸附" if ev.get("approx") else "",
+            "—" if ioi is None else f"{ioi:.0f}",
+            " · ".join(notes),
         ]
         for c, v in enumerate(vals):
             item = QTableWidgetItem(v)
@@ -538,8 +559,13 @@ class MainWindow(QMainWindow):
 
 def main():
     import os
+    from PySide6.QtGui import QIcon
     app = QApplication(sys.argv)
-    app.setApplicationName("原神乐器演奏检测器")
+    app.setApplicationName(APP_NAME)
+    app.setApplicationVersion(APP_VERSION)
+    icon_path = _resource_path("app.ico")
+    if os.path.exists(icon_path):
+        app.setWindowIcon(QIcon(icon_path))
     app.setStyleSheet(DARK_QSS)
     w = MainWindow()
     w.show()

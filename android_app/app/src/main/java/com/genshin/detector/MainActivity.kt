@@ -41,7 +41,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             val title = TextView(this).apply {
-                text = "原神乐器演奏检测器 v2.0.7"
+                text = "原神乐器演奏检测器 v1.0.0"
                 setTextColor(0xFFE8E8E8.toInt())
                 textSize = 20f
                 setPadding(0, 0, 0, 24)
@@ -133,19 +133,28 @@ class MainActivity : AppCompatActivity() {
                 rec = AudioRecord(MediaRecorder.AudioSource.MIC, bestRate,
                     AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bestBuf)
                 rec.startRecording()
+                // 检测器按实际采样率创建；时间戳由检测器内部的样本时钟给出（不再用系统时间），
+                // 帧之间按 1024 样本重叠，读块长度不再影响时间精度
+                val det = NoteDetector(0.7f, bestRate)
+                detector = det
                 val buf = ShortArray(FFT_SIZE)
-                var t0 = System.nanoTime()
                 while (recording) {
                     val n = rec.read(buf, 0, FFT_SIZE)
                     if (n <= 0) continue
-                    val t = (System.nanoTime() - t0) / 1e9
                     val mono = FloatArray(n) { buf[it] / 32768f }
-                    val rms = sqrt(mono.map { it*it }.average())
-                    detector?.feed(mono, t)
+                    var sum = 0.0
+                    for (v in mono) sum += v * v
+                    val rms = sqrt(sum / n)
+                    det.feedSamples(mono, n)
+                    // 在采集线程里取快照再交给 UI 线程，避免 UI 线程遍历检测器内部的 Map 时被并发修改
+                    val bpmV = det.bpm
+                    val labels = det.activeLabels.joinToString("  ")
+                    val tonality = det.tonality
+                    val chord = det.chord
                     runOnUiThread {
-                        val db = if (rms > 0.0001f) 20 * log10(rms).toFloat() else -99f
+                        val db = if (rms > 0.0001) 20 * log10(rms).toFloat() else -99f
                         txtLevel.text = "电平: %.1f dB".format(db)
-                        updateUI()
+                        updateUI(bpmV, labels, tonality, chord)
                     }
                 }
                 rec.stop(); rec.release()
@@ -163,11 +172,10 @@ class MainActivity : AppCompatActivity() {
         txtStatus.text = "已停止"
     }
 
-    private fun updateUI() {
-        val d = detector ?: return
-        txtBpm.text = d.bpm?.let { String.format("%.1f", it) } ?: "—"
-        txtKey.text = d.tonality
-        txtChord.text = d.chord ?: "—"
-        txtNotes.text = d.activeLabels.joinToString("  ")
+    private fun updateUI(bpm: Float?, labels: String, tonality: String, chord: String?) {
+        txtBpm.text = bpm?.let { String.format("%.1f", it) } ?: "—"
+        txtKey.text = tonality
+        txtChord.text = chord ?: "—"
+        txtNotes.text = labels
     }
 }

@@ -1,9 +1,14 @@
 # 原神乐器演奏检测器 
 
-**版本**：2.0.7　|　`原神乐器演奏检测器.exe` `原神乐器演奏检测器.apk`（exe无需安装，apk需要关闭安装包安全验证）
+**版本**：1.0.0 正式版　|　下载：[GitHub Releases](https://github.com/hutao48/genshinimpact-py.found/releases/latest)
 
+| 下载文件 | 说明 |
+|---|---|
+| `GenshinInstrumentDetector-1.0.0-win64-setup.exe` | Windows 安装程序（安装到当前用户目录，无需管理员；带开始菜单/桌面快捷方式与卸载） |
+| `GenshinInstrumentDetector-1.0.0-win64-portable.exe` | Windows 免安装单文件版，双击运行 |
+| `GenshinInstrumentDetector-1.0.0-android.apk` | Android 安装包（需关闭“安装包安全验证”；与 2.0.x 旧版签名不同，请先卸载旧版） |
 
-**更新说明**：适配Android9以上系统，Android端新增电平检测
+**更新说明**：BPM 与每个音的时长检测重写（起音对齐到敲击瞬间、同键连按逐个拆开、结束方式标注、和弦合并的 BPM 估计）；新增 Windows 安装程序与离线分析（`--analyze 录音.wav`）。
 
 ---
 
@@ -31,7 +36,7 @@
 
 ## 二、快速开始
 
-1. 双击运行 `原神乐器演奏检测器.exe`（首次启动约需 2–5 秒，单文件模式会先解压）。
+1. 运行安装程序 `GenshinInstrumentDetector-1.0.0-win64-setup.exe` 后从开始菜单/桌面启动；或直接双击免安装版 exe（首次启动约需 2–5 秒，单文件模式会先解压）。
 2. 顶部选择**乐器**（默认风物之诗琴）。
 3. **采集设备**默认已选中“扬声器输出·回环”——即监听所有经过扬声器播放的声音，游戏内演奏会被自动捕获，**无需任何额外设置**。
 4. 点击 **▶ 开始监听**，然后进入游戏演奏即可。
@@ -87,9 +92,19 @@
 | 琴键实时显示 | 当前正在发音的键高亮（含和弦键） |
 | 实时检测 | 当前按键（音名）、检测到的和弦、当前调性、当前 BPM |
 | BPM 历史变化 | 条形图，横轴为采样序号（时间）、纵轴为 BPM，最近 90 个采样点，按快慢着色 |
-| 每个音的具体时长 | 表格：开始时间 / 按键 / 音名 / 唱名 / 时长(ms) / 备注，滚动记录最近 500 条 |
+| 每个音的具体时长 | 表格：开始时间 / 按键 / 音名 / 唱名 / 时长(ms) / 间隔(ms) / 备注，滚动记录最近 500 条（见下方"时长与 BPM 的口径"） |
 | 移调 | 音高基准校准（半音，-12～+12），若检测出的音高与实际不符可用它整体平移 |
 | 清空记录 | 清空表格、BPM 历史与实时显示 |
+
+**时长与 BPM 的口径**
+
+- **开始时间**：对齐到真实敲击瞬间（细分辨率起音函数，误差约 ±5 ms），时间轴为"开始监听后的音频时长"。
+- **时长**：起音 → 该音结束，备注栏说明结束方式：
+  - `松键/截止`：声音被急速截止（松键止音、圆号松键、被截断），时长 = 按键时长（已扣除释放尾音）；
+  - `同键重按`：同一键被再次按下，时长 = 到再次按下的时间（连按同一键会逐个拆开）；
+  - `余音自然衰减`：拨弦类乐器松键后余音照常衰减，**松键时刻在声音里不可观测**，这里给出的是余音可辨的长度，不是按键时长。
+- **间隔**：与上一个起音的时间差（和弦算一次起音）。脚本"按下→保持→松开→下一个"式演奏时，间隔 ≈ 按键时长 + 固定开销。
+- **BPM**：= 60 / 起音周期（最常见的规则起音间隔单位）。全是八分音符的旋律给出的是八分音符速率。
 
 ---
 
@@ -106,32 +121,48 @@
 
 **诊断模式**：设置环境变量 `GID_DEBUG=1` 后运行 EXE，会在日志中记录设备打开与运行状态，便于远程排查。
 
+**离线分析录音**：`原神乐器演奏检测器.exe --analyze 录音.wav [结果.txt] [乐器名]`，结果默认写到录音旁边的「录音名_分析.txt」（每个音的开始时间、按键、时长、间隔、结束方式以及 BPM、调性）。
+
 ---
 
 ## 七、技术说明（简述）
 
-- 采集：WASAPI 回环/麦克风双模式，48 kHz、2048 采样/块。
-- 检测：FFT（4096 + 16384 零填充）提取基频与谐波结构，逐键跟踪；攻击门限 + 谐波结构校验剔除背景杂音；连续 3 帧确认起音、100ms 最短音长、自身幅度回升重触发处理连音。
-- BPM：对最近 24 个起音间隔做周期对齐打分（候选 0.20–1.60 s），平滑输出。
+- 采集：WASAPI 回环/麦克风双模式，48 kHz、2048 采样/块；**所有时间戳取音频样本时钟**（实时与离线结果一致，不受读块抖动影响）。
+- 检测：FFT（4096 + 16384 零填充）提取基频与谐波结构，逐键跟踪；攻击门限 + 谐波结构校验剔除背景杂音；连续 4 帧确认。
+- 起音：1024 窗 / 256 帧移的 log 谱通量（SuperFlux 式）定位敲击瞬间；新音必须对应一个起音峰；硬截止"咔哒"（其后总功率下降）不算起音；与更强音同时出现、弱 6 dB 以上且 0.25 s 内消失的"起音旁瓣"剔除。
+- 时长：按该音自身电平轨迹定位结束——急速截止取 -6 dB 半幅点并按截止陡峭度查表扣除释放尾音；同键重按（起音前后整窗电平回到"刚按下"水平）在新起音处结束；否则为余音自然衰减。
+- BPM：和弦合并为一个起音事件 → 一/二/三阶起音间隔在 0.20–1.60 s 候选周期上做软高斯核打分（按倍数 1/√k 降权，抑制半周期/倍周期）→ 分段同相位网格合并回归精修 → 近期起音加权（变速约 4–6 s 跟上）、两次确认才跳变。
 - 调性：Krumhansl-Schmuckler 调性轮廓匹配，14 秒滑动窗口、时长加权。
+- 评测：`python test_detection.py`（合成音频回归测试，带断言）；`python benchmark_timing.py --old`（带真值的时间精度基准，并与 git HEAD 版本对比）。
 
 ---
 
 ## 八、目录结构（源码版）
 
 ```
-原神乐器演奏检测器/
-├── dist/原神乐器演奏检测器.exe   ← 成品（可直接分发）
-├── main.py            入口 + 异常日志
-├── ui_main.py         PySide6 界面
-├── audio_capture.py   音频采集（回环/麦克风）
-├── detection.py       检测引擎
-├── instruments.py     乐器定义与键位
-├── test_detection.py  单元测试（合成音频 5 组）
-└── requirements.txt   依赖清单
+├── main.py               入口 + 异常日志 + 离线分析（--analyze）
+├── app_version.py        版本号（界面、exe 属性、安装程序共用）
+├── ui_main.py            PySide6 界面
+├── audio_capture.py      音频采集（回环/麦克风）
+├── detection.py          检测引擎
+├── instruments.py        乐器定义与键位
+├── test_detection.py     回归测试（合成音频 5 组，带断言）
+├── benchmark_timing.py   时间精度基准（起音/时长/BPM 真值对比，--old 对比旧版）
+├── eval_recordings.py    真实录音新旧版对比
+├── packaging/            Windows 打包：PyInstaller spec、Inno Setup 安装脚本、图标、一键打包脚本
+├── android_app/          Android 端（Kotlin）
+└── .github/workflows/    GitHub Actions：推送 v* tag 自动构建 exe/安装程序/APK 并发布 Release
 ```
 
-重新打包命令（需 Python 3.14 与依赖）：
+## 九、自行打包
+
+**Windows（exe + 安装程序）**：需要 Python 3.10+ 与 [Inno Setup 6](https://jrsoftware.org/isinfo.php)。
+
 ```
-python -m PyInstaller --noconfirm --clean --onefile --windowed --name "原神乐器演奏检测器" --collect-submodules soundcard --collect-data pyqtgraph main.py
+python -m pip install -r packaging\requirements-build.txt
+powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
 ```
+
+产物在 `dist\`：`原神乐器演奏检测器.exe`（单文件）、`GenshinInstrumentDetector-<版本>-win64-portable.exe`、`GenshinInstrumentDetector-<版本>-win64-setup.exe`。
+
+**发布**：修改 `app_version.py` 与 `android_app/app/build.gradle` 中的版本号后，推送 tag（如 `git tag v1.0.1 && git push origin v1.0.1`），GitHub Actions 会自动构建三个安装包并创建 Release。Android 正式签名可在仓库 Secrets 中配置 `ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD`，未配置时使用调试密钥签名。
