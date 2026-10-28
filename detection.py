@@ -13,6 +13,10 @@
     decay   —— 自然衰减到不可辨：取最后一次可见的帧时刻（拨弦类余音，松键时刻在音频中不可观测）。
 - 同键重按：起音前后整窗幅度比较（新发声回到该音"刚按下"时的电平且上升 ≥2 dB），
   连按同一键会被拆成多个音（原先重触发被禁用，连按全部合并成一个超长音）。
+- 时长抗噪（游戏环境底噪 / 短促音效 / 背景音乐下不再频繁切断时长、拆出碎片）：
+    开新音、同键重按都要求本音频点像真实按键那样上升且持续到起音后 130 ms（_press_ok、_eval_retrig）；
+    已在响的音只由精确音高的峰维持；判"松键/截止"时排除随后回升的干涉凹陷、电平起伏大时要求更深的跌落、
+    趋势线不可靠时要求截止式的急速跌落（_end_time）。
 - BPM：同一起音（和弦）合并为一个事件 → 一/二/三阶起音间隔在候选周期上做软核打分
   （按倍数 k 降权，天然抑制"取半周期/倍周期"）→ 分段同相位网格的合并回归精修周期
   （精度不受候选步长限制，休止/拖拍只影响局部）→ 小幅平滑 + 两次确认才跳变。
@@ -476,11 +480,13 @@ class NoteDetector:
                         out.append(s)
             return out
         snapped_new = snap(midis_new)
-        snapped_all = snap(midis_all)
-        # raw：新音候选 ∪ 仍在峰中出现且幅度仍显著（≥15% 帧峰值）的已活跃音
+        # raw：新音候选 ∪ 仍在峰中出现且幅度仍显著（≥15% 帧峰值）的已活跃音。
+        # 已活跃音只认"精确命中"的峰（四舍五入后的音高就是它本身）：背景音乐/音效里的半音、
+        # 非白键音被吸附到相邻琴键时，不应把一个已经结束的音一直撑着
+        exact_all = set(midis_all)
         raw = set(snapped_new)
         for m in self.active:
-            if m in snapped_all and self._amp_of(m, mag) >= 0.15 * peak:
+            if m in exact_all and self._amp_of(m, mag) >= 0.15 * peak:
                 raw.add(m)
 
         # 连续帧确认：连续缺席 2 帧才重置 streak
@@ -525,6 +531,12 @@ class NoteDetector:
                     # 无对应起音峰：琴类每次按键都有明显敲击瞬态，没有起音峰的"新音"
                     # 几乎都是余音里的旁瓣/谐波误检，不开新音
                     continue
+                ok = self._press_ok(m, on[0])
+                if ok is None:
+                    continue          # 判定所需的帧还没到，下一帧再判
+                if not ok:
+                    # 本音频点没有像真实按键那样骤升：多为仍在响的余音被重新检出、或噪音音效，不开新音
+                    continue
                 self._open_note(m, min(on[0], t_now), t_now, amp, on[1])
                 continue
             if self.active_frames.get(m, 0) > 0:
@@ -534,7 +546,12 @@ class NoteDetector:
                 fresh = t_now - t_att <= 0.35 and self._attack.get(m, 0.0) >= attack_min
                 on = self._match_onset(t_att, after=a["last_raw_before_gap"] + 0.02,
                                        lo=min(t_first, t_att) - 0.075) if fresh else None
-                if on is not None:
+                h = a.get("h", 0)
+                ref_db = float(_db(a["ref"][h])) if a.get("ref") is not None else None
+                ok = self._press_ok(m, on[0], h, ref_db) if on is not None else False
+                if ok is None:
+                    continue          # 等判定所需的帧到达再判
+                if ok:
                     old = self.active.pop(m)
                     end, reason = self._end_time(m, old, t_limit=on[0])
                     self._close_note(m, old, end, reason, events)
@@ -581,10 +598,120 @@ class NoteDetector:
     # ------------------------------------------------------------------
     # 起音确认（BPM 用）与同键重按：起音前后整窗比较
     # ------------------------------------------------------------------
+    RETRIG_DELAY = 0.18      # 起音后多久评估（需要 T+130 ms 处的"持续性"帧）
+
     def _eval_pending(self, t_now, events):
-        while self._pending and self._pending[0] <= t_now - 0.10:
+        while self._pending and self._pending[0] <= t_now - self.RETRIG_DELAY:
             T = self._pending.popleft()
             self._eval_retrig(T, t_now, events)
+
+    def _frames_around(self, T):
+        """起音 T 的参照帧下标：jb = 窗完全在 T 之前的最后一帧；ja = 窗完全在 T 之后的第一帧；
+        j2 = 中心 ≥ T+130 ms 的第一帧（用于判断变化是否持续，排除短促的噪音音效）"""
+        ts = np.fromiter(self._hist_t, dtype=np.float64)
+        jb = int(np.searchsorted(ts, T - 0.043, side="right")) - 1
+        ja = int(np.searchsorted(ts, T + 0.043, side="left"))
+        j2 = int(np.searchsorted(ts, T + 0.130, side="left"))
+        return ts, jb, ja, j2
+
+    def _valid_track_idx(self):
+        return np.array([m - _TRACK_LO for m in self.instrument.valid_midis()
+                         if 0 <= m - _TRACK_LO < self._track_bins.shape[1]], dtype=int)
+
+    def _rise_at(self, m, T, h=0):
+        """本音频点（h=0 基频 / h=1 二次谐波）在起音 T 前后整窗的电平变化，用于判断"这是不是一次真实按键"。
+        返回 dict：rise 本音上升 dB；med 乐器其它琴键基频频点上升的中位数（宽带噪音会让所有频点一起涨）；
+        prom 起音后本音比其它琴键频点中位电平高多少 dB（真实乐音是突出的窄峰）；la 起音后本音电平 dB。
+        起音后的整窗帧尚未到达时返回 None。"""
+        if len(self._hist_t) < 4:
+            return None
+        ts, jb, ja, _ = self._frames_around(T)
+        if ja >= len(ts):
+            return None
+        if jb < 0:
+            # 起音就在音频流开头，之前没有任何声音可比：视为从静音中按下
+            return {"rise": 99.0, "med": 0.0, "prom": 99.0, "la": 99.0}
+        j = m - _TRACK_LO
+        if not (0 <= j < self._track_bins.shape[1]):
+            return {"rise": 99.0, "med": 0.0, "prom": 99.0, "la": 99.0}
+        Xb, Xa = self._hist_X[jb], self._hist_X[ja]
+        la = float(_db(Xa[h, j]))
+        rise = la - float(_db(Xb[h, j]))
+        jv = self._valid_track_idx()
+        jv = jv[jv != j]
+        if jv.size:
+            la_o = _db(Xa[0, jv])
+            med = float(np.median(la_o - _db(Xb[0, jv])))
+            prom = la - float(np.median(la_o))
+        else:
+            med, prom = 0.0, 99.0
+        return {"rise": rise, "med": med, "prom": prom, "la": la}
+
+    @staticmethod
+    def _is_fresh_press(r, ref_db=None):
+        """起音前后本音频点的变化是否像一次真实按键（快速判定；不确定时由 _press_ok 等瞬态消退后再判）：
+        - 本音上升 ≥4 dB（仍在响的余音被别的音的起音"重新检出"时几乎不上升）；
+        - 且 本音上升明显高于其它频点的整体抬升，或 本音在起音后的频谱里是突出的窄峰
+          （宽带噪音音效会把所有频点一起抬高、本音并不突出）；
+        - 若是同一键再次按下：起音后要回到该音"刚按下"时的电平（原神乐器没有力度变化）——
+          背景音乐同频干涉造成的凹陷回升只会回到衰减中的电平。"""
+        if r["rise"] < 4.0:
+            return False
+        if r["rise"] - r["med"] < 3.0 and r["prom"] < 15.0:
+            return False
+        if ref_db is not None and r["la"] < ref_db - 3.0:
+            return False
+        return True
+
+    def _persist_at(self, m, T, h=0):
+        """起音后 130 ms（瞬态已消退）本音相对起音前的电平变化 rise2、其它琴键频点同期变化的中位数 med2，
+        此时本音比其它琴键频点中位电平高多少 prom2，以及此时本音电平 l2。该帧尚未到达时返回 None。"""
+        ts, jb, _, j2 = self._frames_around(T)
+        if jb < 0 or j2 >= len(ts):
+            return None
+        j = m - _TRACK_LO
+        if not (0 <= j < self._track_bins.shape[1]):
+            return {"rise2": 99.0, "med2": 0.0, "prom2": 99.0, "l2": 99.0}
+        Xb, X2 = self._hist_X[jb], self._hist_X[j2]
+        l2 = float(_db(X2[h, j]))
+        jv = self._valid_track_idx()
+        jv = jv[jv != j]
+        if jv.size:
+            l2_o = _db(X2[0, jv])
+            prom2 = l2 - float(np.median(l2_o))
+            med2 = float(np.median(l2_o - _db(Xb[0, jv])))
+        else:
+            prom2, med2 = 99.0, 0.0
+        return {"rise2": l2 - float(_db(Xb[h, j])), "med2": med2, "prom2": prom2, "l2": l2}
+
+    def _press_ok(self, m, T, h=0, ref_db=None):
+        """起音 T 是否是键 m 的一次真实按键：True / False / None（所需的帧还没到，下一帧再判）。
+        先用起音后第一个整窗帧快速判定；不通过时等到起音后 130 ms 再判，原因有二：
+        - 和弦（尤其低音和弦）同时起音时，宽带起音瞬态会把所有频点一起抬高 10 dB 以上；
+        - 低音区相邻白键只差 10~18 Hz（在 4096 点窗主瓣内），邻键余音的泄漏与拍频会掩盖起音瞬间的上升，
+          而移调到低音的采样起音也更慢。
+        瞬态消退后：真实乐音仍明显高于起音前、且是突出的窄峰；仍在响的余音不会上升；噪音音效已落回原电平。"""
+        r = self._rise_at(m, T, h)
+        if r is None:
+            return None
+        if self._is_fresh_press(r, ref_db):
+            return True
+        p = self._persist_at(m, T, h)
+        if p is None:
+            return None
+        if p["rise2"] < 4.0:
+            return False
+        if ref_db is not None and p["l2"] < ref_db - 4.5:
+            return False
+        return p["prom2"] >= 8.0 or p["rise2"] - p["med2"] >= 3.0
+
+    def _onset_influence(self, c):
+        """帧中心 c 的分析窗（±43 ms）是否覆盖了某个起音后 100 ms 内的起音瞬态"""
+        for T, _h in reversed(self._of_peaks):
+            if T > c + 0.043:
+                continue
+            return T >= c - 0.143
+        return False
 
     def _add_beat_onset(self, T, strength):
         """BPM 用起音事件：起音峰 + 音高证据（与音符跟踪解耦，同键连按/漏开的音也能计入）"""
@@ -614,18 +741,16 @@ class NoteDetector:
     def _eval_retrig(self, T, t_now, events):
         if len(self._hist_t) < 4:
             return
-        ts = np.fromiter(self._hist_t, dtype=np.float64)
-        jb = int(np.searchsorted(ts, T - 0.043, side="right")) - 1   # 窗完全在起音前的最后一帧
-        ja = int(np.searchsorted(ts, T + 0.043, side="left"))        # 窗完全在起音后的第一帧
+        ts, jb, ja, j2 = self._frames_around(T)
         if jb < 0 or ja >= len(ts):
             return
-        Xb, Xa = self._hist_X[jb], self._hist_X[ja]
+        j2 = min(j2, len(ts) - 1)
+        Xb, Xa, X2 = self._hist_X[jb], self._hist_X[ja], self._hist_X[j2]
         strength = self._onset_strength_at(T)
-        # 音高证据：乐器某个可用音的基频频点上升 ≥2 dB，且不是很弱的分量 → 这是一次真实按键
-        jv = np.array([m - _TRACK_LO for m in self.instrument.valid_midis()
-                       if 0 <= m - _TRACK_LO < Xa.shape[1]], dtype=int)
+        jv = self._valid_track_idx()
         if jv.size:
             la_v, lb_v = _db(Xa[0, jv]), _db(Xb[0, jv])
+            # 音高证据：乐器某个可用音的基频频点上升 ≥2 dB，且不是很弱的分量 → 这是一次真实按键（BPM 用）
             if np.any((la_v - lb_v >= 2.0) & (la_v >= la_v.max() - 20.0)):
                 self._add_beat_onset(T, strength)
         if not self.active:
@@ -642,15 +767,29 @@ class NoteDetector:
                 continue
             ref = a["ref"]
             hit = False
+            lb0, la0, l20 = _db(Xb[0, j]), _db(Xa[0, j]), _db(X2[0, j])
             for h in (0, 1):
                 if ref[h] < 0.1 * ref.max():
                     continue          # 该谐波太弱，不可靠
-                lb, la, lref = _db(Xb[h, j]), _db(Xa[h, j]), _db(ref[h])
+                if h == 1:
+                    # 用二次谐波作证据时，基频必须同向变化（真正重按时所有分音一起回升）：
+                    # 弱谐波（比最强分音低 12 dB 以上）绝对电平低，一点噪音就能让它"上升"，要求基频也上升并持续；
+                    # 强谐波至少要求基频没有下降
+                    if ref[1] < 0.25 * ref.max():
+                        if not (la0 - lb0 >= 2.0 and l20 - lb0 >= 1.0):
+                            continue
+                    elif la0 < lb0 - 0.5:
+                        continue
+                lb, la, l2, lref = _db(Xb[h, j]), _db(Xa[h, j]), _db(X2[h, j]), _db(ref[h])
                 # 重按 = 起音后电平回到该音"刚按下"时的水平，且相对起音前有上升。
                 # 余音衰减慢（-8~-13 dB/s）时连按 0.3 s 只回升约 2 dB，故分两档：
                 #   回到刚按下电平 ±1.5 dB 且上升 ≥1 dB；或回到 -3 dB 内且上升 ≥2 dB
                 rise = la - lb
                 if not ((rise >= 1.0 and la >= lref - 1.5) or (rise >= 2.0 and la >= lref - 3.0)):
+                    continue
+                # 抗噪：上升要持续——起音后 130 ms 仍明显高于起音前（游戏里的短促音效、别的音的起音瞬态
+                # 20~120 ms 就过去了，电平会落回原来的衰减轨迹）
+                if l2 - lb < max(0.5, 0.3 * rise):
                     continue
                 blocked = False
                 for nn in new_notes:
@@ -675,7 +814,9 @@ class NoteDetector:
             self._open_note(m, T, t_now, old["amp"], strength)
             na = self.active[m]
             na["last_raw"] = old["last_raw"]
-            na["ref"] = np.abs(Xa[:, j]).astype(np.float64)
+            # 沿用上一次"刚按下"的参考电平：原神乐器没有力度变化，每次按下电平相同；
+            # 若改用本次测得的电平，一次被噪音抬高的误判会把参考越抬越高、引发连锁误判
+            na["ref"] = old["ref"].copy()
             na["h"] = old["h"]
             self._set_ref_db(na)
 
@@ -691,9 +832,11 @@ class NoteDetector:
     # ------------------------------------------------------------------
     def _end_time(self, m, a, t_limit=None):
         """返回 (结束时刻, 原因)。
-        自起音后逐帧扫描该音自身电平：相对"截止前趋势线"首次跌破 -6 dB、随后 3 帧内跌到
-        -12 dB 以下且不回升 → 急速截止，用 -6/-12 dB 交越时间差查表扣除释放尾音偏差得松键时刻；
-        否则为自然衰减，取最后一次可见的帧时刻。t_limit：结束时刻上限（同键重按的新起音）。"""
+        自起音后逐帧扫描该音自身电平：相对"截止前趋势线"首次跌破 -6 dB、随后持续低于趋势线且
+        跌够深 → 急速截止，用 -6/-12 dB 交越时间差查表扣除释放尾音偏差得松键时刻；
+        否则为自然衰减，取最后一次可见的帧时刻。t_limit：结束时刻上限（同键重按的新起音）。
+        抗噪：截止必须是"最终的"——凹陷后 0.35 s 内电平又回升到趋势线附近（背景音乐同频干涉的拍频、
+        噪音造成的凹陷），就不算松键，继续向后找。"""
         t_last = a.get("last_raw", a["last"])
         if t_limit is not None:
             t_last = min(t_last, t_limit)
@@ -707,21 +850,38 @@ class NoteDetector:
             return fallback
         ts = np.fromiter(self._hist_t, dtype=np.float64)
         L = _db(np.array([x[a.get("h", 0), j_m] for x in self._hist_X]))
+        n_fr = len(ts)
         t_hi = t_last + 0.07
         if t_limit is not None:
             t_hi = min(t_hi, t_limit + 0.02)
         i_ref0 = int(np.searchsorted(ts, a["start"] + 0.043))     # 窗完全落在起音后的首帧
         i_any0 = int(np.searchsorted(ts, a["start"] + 0.021))
         i_end = int(np.searchsorted(ts, t_hi, side="right")) - 1
+        # 趋势线只用"电平到顶之后"的帧拟合：起音后电平还要爬升几十毫秒（高音、和弦更明显），
+        # 把上升段算进去会让拟合斜率被钳成 0，快衰减的音就会被误判为"截止"
+        i_pk_hi = int(np.searchsorted(ts, a["start"] + 0.25, side="right"))
+        if i_pk_hi > i_ref0:
+            i_ref0 = i_ref0 + int(np.argmax(L[i_ref0:i_pk_hi]))
+        # "是否回升"只看到同键重按之前（重按后的电平属于新音）
+        k_stop = n_fr if t_limit is None else int(np.searchsorted(ts, t_limit - 0.025, side="right"))
         for i in range(max(1, i_any0 + 1), i_end + 1):
             pre = [k for k in range(i_ref0, i - 2) if ts[k] >= ts[i] - 0.30]
+            # 趋势线不可靠：拟合帧不足（音刚开始）或自然衰减比 -40 dB/s 还快（高音、拍频）——
+            # 此时自然衰减本身就可能跌破 -6 dB，候选必须表现出"截止式"的急速跌落才算松键
+            unreliable = len(pre) < 3
+            # 截止前电平起伏大（与相邻键泄漏/背景音乐同频分量发生拍频干涉、或噪音）：干涉凹陷可达 10~17 dB，
+            # 此时要求更深的跌落（≥18 dB）才算松键
+            turbulent = False
             if len(pre) >= 3:
                 tp, lp = ts[pre], L[pre]
                 tm, lm = tp.mean(), lp.mean()
                 vt = float(np.sum((tp - tm) ** 2))
                 c1 = float(np.sum((tp - tm) * (lp - lm)) / vt) if vt > 0 else 0.0
+                unreliable = c1 < -40.0
+                turbulent = c1 > 5.0           # 余音电平在上升：只可能是干涉拍频
                 c1 = min(0.0, max(c1, -40.0))
                 c0 = float(lm - c1 * tm)
+                turbulent = turbulent or float(np.std(lp - (c0 + c1 * tp))) > 2.5
             else:
                 seg = list(range(i_any0, i - 1))
                 if not seg:
@@ -731,11 +891,14 @@ class NoteDetector:
             r_cur = c0 + c1 * ts[i]
             y0 = L[i - 1] - (r_prev - 6.0)
             y1 = L[i] - (r_cur - 6.0)
-            if not (y1 < 0.0 <= y0):
+            # 第一个低于（本帧所用）趋势线 -6 dB 的帧即候选交越。不要求上一帧在同一条线之上：
+            # 趋势线随 i 逐帧重拟合，交越可能恰好落在两次拟合"之间"，那样会被整个跳过
+            if y1 >= 0.0:
                 continue
+            y0 = max(y0, 0.0)
             # 凹陷段：从交越帧起、电平仍低于趋势线 3 dB 的连续帧（遇到重按的新起音即停）
             run = []
-            for k in range(i, min(len(ts), i + 6)):
+            for k in range(i, min(n_fr, i + 6)):
                 if t_limit is not None and ts[k] > t_limit - 0.025:
                     break
                 if L[k] >= (c0 + c1 * ts[k]) - 3.0:
@@ -744,12 +907,34 @@ class NoteDetector:
             if not run:
                 continue
             depth = max((c0 + c1 * ts[k]) - L[k] for k in run)
-            if t_limit is not None and run[-1] + 1 < len(ts) and ts[run[-1] + 1] > t_limit - 0.025:
+            cut_by_repress = (t_limit is not None and run[-1] + 1 < n_fr
+                              and ts[run[-1] + 1] > t_limit - 0.025)
+            if cut_by_repress:
                 ok = depth >= 9.0                  # 紧接着同键重按：凹陷被新音提前填平
+            elif turbulent:
+                ok = depth >= 18.0 and len(run) >= 2
             else:
                 ok = depth >= 12.0 and (len(run) >= 2 or depth >= 18.0)
             if not ok:
                 continue          # 只是干涉/拍频造成的短暂凹陷，继续向后找
+            # 回升检验：凹陷之后 0.35 s 内，电平又回到截止前电平 -6 dB 以上、且比凹陷底部回弹 ≥8 dB → 不是松键。
+            # 截止前电平按温和斜率（至多 -12 dB/s，琴类余音的典型衰减）外推——用拟合的陡斜率外推 0.3 s 后
+            # 阈值会低到被相邻键的泄漏"冒充"成回升。
+            # 别的音起音瞬态（起音后 100 ms 内）覆盖到的帧不算回升：那是它的宽带瞬态漏到了本音频点
+            l_min = float(min(L[k] for k in run))
+            r_i = c0 + c1 * ts[i]
+            c_rec = max(c1, -12.0)
+            recovered = False
+            for k in range(run[-1] + 1, k_stop):
+                if ts[k] > ts[i] + 0.35:
+                    break
+                if self._onset_influence(ts[k]):
+                    continue
+                if L[k] >= r_i + c_rec * (ts[k] - ts[i]) - 6.0 and L[k] >= l_min + 8.0:
+                    recovered = True
+                    break
+            if recovered:
+                continue
             cross6 = ts[i - 1] + (y0 / (y0 - y1) if y0 != y1 else 0.0) * (ts[i] - ts[i - 1])
             cross12 = None
             for k in range(i, run[-1] + 1):
@@ -761,13 +946,22 @@ class NoteDetector:
                     cross12 = ts[k - 1] + (z0 / (z0 - z1) if z0 != z1 else 0.0) * (ts[k] - ts[k - 1])
                     break
             delta = None if cross12 is None else cross12 - cross6
+            if unreliable and not cut_by_repress and (delta is None or delta > 0.06):
+                continue          # 跌落不够急（-6→-12 dB 用时 >60 ms，即慢于 100 dB/s）：是快速自然衰减，不是松键
             t_rel = cross6 - _release_bias(delta)
-            # 硬截止会在细分辨率通量上留下能量下降型"咔哒"：附近若有，以它为准（±3 ms 级精度，
-            # 不受下一个音起音泄漏的干扰）。游戏实录的释放是渐弱的，没有咔哒，此步不生效
+            # 截止（硬切/松键止音的起点）会在细分辨率通量上留下能量下降型"咔哒"：若咔哒与本音电平的
+            # 跌落区间吻合，以它为准（±3 ms 级精度，不受下一个音起音泄漏的干扰）。
+            # 跌落区间：4096 Hann 窗下，电平仍在趋势线 1.5 dB 内的帧说明截止晚于其中心 +16 ms；
+            # 已跌到 -18 dB 以下的帧说明截止早于其中心 -18 ms——区间外的咔哒（噪音）不用
+            k_full = next((k for k in range(i - 1, max(-1, i - 8), -1)
+                           if L[k] >= (c0 + c1 * ts[k]) - 1.5), None)
+            k_empty = next((k for k in run if L[k] <= (c0 + c1 * ts[k]) - 18.0), None)
+            c_lo = (ts[k_full] + 0.016 if k_full is not None else cross6 - 0.06) - 0.010
+            c_hi = (ts[k_empty] - 0.018 if k_empty is not None else cross6 + 0.06) + 0.010
             for tc, _h in reversed(self._off_peaks):
-                if tc < t_rel - 0.06:
+                if tc < c_lo:
                     break
-                if a["start"] + 0.03 <= tc <= t_rel + 0.03:
+                if a["start"] + 0.03 <= tc <= c_hi:
                     t_rel = tc
                     break
             t_rel = max(a["start"], t_rel)
@@ -777,10 +971,11 @@ class NoteDetector:
         return fallback
 
     def _click_before(self, a, T):
-        """同键重按前若出现截止"咔哒"（能量下降型通量峰），返回其时刻"""
+        """同键重按前紧挨着的截止"咔哒"（能量下降型通量峰）：硬截止后 ≤60 ms 内又按下同一键时，
+        4096 点帧看不到电平跌落，只能靠咔哒定位上一音的结束。更早的咔哒与本音无关（噪音），不用"""
         best = None
         for t, h in reversed(self._off_peaks):
-            if t < a["start"] + 0.03:
+            if t < max(a["start"] + 0.03, T - 0.06):
                 break
             if t <= T - 0.008 and (best is None or t > best):
                 best = t

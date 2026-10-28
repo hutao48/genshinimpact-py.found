@@ -12,6 +12,7 @@
 用法：
   python benchmark_timing.py               # 评测当前 detection.py
   python benchmark_timing.py --old         # 同时评测 git HEAD 版本做对比
+  python benchmark_timing.py --noise --old # 游戏噪音场景（底噪/音效/背景音乐）下时长模块的敏感度对比
 """
 import argparse
 import importlib.util
@@ -311,14 +312,164 @@ def fmt(v, f="{:6.1f}"):
     return "   —  " if v is None else f.format(v)
 
 
+# ---------------------------------------------------------------- 游戏噪音场景（--noise）
+def _pink(n, rng):
+    X = np.fft.rfft(rng.standard_normal(n))
+    f = np.arange(len(X), dtype=float)
+    f[0] = 1.0
+    y = np.fft.irfft(X / np.sqrt(f), n)
+    return y / (np.std(y) + 1e-12)
+
+
+def make_noise(n, kind, rng):
+    """ambient：粉红噪声（风声/水声类稳态底噪）；sfx：每秒 ~3 个 20~120 ms 的短促音效
+    （宽带噪声 + 随机频率的音调分量，指数衰减后截断）；bgm：背景音乐（每 2 s 换 3 个持续音，带谐波、淡入淡出）"""
+    if kind == "ambient":
+        return _pink(n, rng)
+    if kind == "sfx":
+        y = np.zeros(n)
+        k = 0.0
+        while True:
+            k += rng.exponential(1 / 3.0)
+            i0 = int(k * SR)
+            if i0 >= n:
+                break
+            L = int(rng.uniform(0.02, 0.12) * SR)
+            idx = np.arange(L)
+            env = np.exp(-idx / (rng.uniform(0.008, 0.04) * SR))
+            fc = rng.uniform(250, 3500)
+            burst = (0.6 * rng.standard_normal(L)
+                     + rng.uniform(0, 1) * np.sin(2 * np.pi * fc * idx / SR + rng.uniform(0, 6.28))) * env
+            burst *= 10 ** (rng.uniform(-8, 0) / 20)
+            y[i0:i0 + L] += burst[:n - i0]
+        return y / (np.abs(y).max() + 1e-12)
+    if kind == "bgm":
+        y = np.zeros(n)
+        seg = int(2.0 * SR)
+        for s in range(0, n, seg):
+            L = min(seg + int(0.4 * SR), n - s)
+            tt = np.arange(L) / SR
+            env = np.clip(np.minimum(tt / 0.25, (L / SR - tt) / 0.3), 0, 1)
+            for _ in range(3):
+                f0 = 440 * 2 ** ((rng.uniform(45, 80) - 69) / 12)
+                for h, a in ((1, 1.0), (2, 0.4), (3, 0.2)):
+                    y[s:s + L] += a * env * np.sin(2 * np.pi * f0 * h * tt + rng.uniform(0, 6.28))
+        return y / (np.std(y) + 1e-12)
+    raise ValueError(kind)
+
+
+def add_noise(audio, cond, seed=7):
+    """cond: [(kind, level_db)]；ambient/bgm 电平相对演奏 RMS，sfx 相对演奏峰值"""
+    rng = np.random.default_rng(seed)
+    x = audio.astype(np.float64)
+    act = np.abs(x) > 1e-3
+    rms = np.sqrt(np.mean(x[act] ** 2)) if act.any() else 0.1
+    pk = np.abs(x).max()
+    out = x.copy()
+    for kind, lvl in cond:
+        out += make_noise(len(x), kind, rng) * (pk if kind == "sfx" else rms) * 10 ** (lvl / 20)
+    return out.astype(np.float32)
+
+
+NOISE_CONDS = [
+    ("干净", []),
+    ("底噪-20dB", [("ambient", -20)]),
+    ("底噪-10dB", [("ambient", -10)]),
+    ("音效", [("sfx", -6)]),
+    ("BGM-12dB", [("bgm", -12)]),
+    ("混合", [("ambient", -20), ("sfx", -8), ("bgm", -15)]),
+]
+NOISE_CASES = [
+    # name, notes, timbre, mode, instrument, ring(余音型：发声到同键再次按下或采样结束)
+    ("lyre 松键止音", seq_twinkle(hold=0.3), "lyre", "damp", "lyre", False),
+    ("horn 按住时长各异", seq_horn(), "horn", "ring", "horn", False),
+    ("synth 硬截止", seq_twinkle(), "synth", "ring", "lyre", False),
+    ("lyre 余音 脚本谱", seq_score(), "lyre", "ring", "lyre", True),
+    ("lyre 余音 人手", seq_human(), "lyre", "ring", "lyre", True),
+]
+
+
+def score_noise(events, truth, ring):
+    """时长模块在噪音下的"敏感度"指标：
+    时长MAE —— 有真值的音（松键止音/圆号/硬截止/同键重按）的时长误差；
+    碎片    —— 同一个真实音还在响，却被另开出一行（时长被切断）；
+    误判截止 —— 报告"松键/截止""同键重按"，但那一刻真实声音并没有结束；
+    伪音    —— 对不上任何真实音、也不是碎片的多余行（噪音被当成按键）。"""
+    used, derrs, frag, false_cut, matched = set(), [], 0, 0, 0
+    by_m = {}
+    for t, d, m in truth:
+        by_m.setdefault(m, []).append(t)
+
+    def true_end(m, t_on):
+        nxt = [t for t in by_m[m] if t > t_on + 1e-6]
+        voice_end = t_on + (4.0 - 0.1) / (2.0 ** ((m - 60) / 12.0))   # 余音采样长度 4 s / 移调比
+        return min(nxt[0], voice_end) if nxt else voice_end
+
+    for t_on, dur, m in truth:
+        c = [(abs(e["t"] - t_on), i) for i, e in enumerate(events)
+             if i not in used and e["midi"] == m and abs(e["t"] - t_on) <= 0.06]
+        if not c:
+            continue
+        i = min(c)[1]
+        used.add(i)
+        matched += 1
+        e = events[i]
+        if dur is not None:
+            derrs.append(e["dur_ms"] - 1000 * dur)
+        if ring and e["end"] in ("release", "retrig"):
+            if abs(e["t"] + e["dur_ms"] / 1000 - true_end(m, t_on)) > 0.10:
+                false_cut += 1
+    for i, e in enumerate(events):
+        if i in used:
+            continue
+        ts = [t for t in by_m.get(e["midi"], []) if t < e["t"] - 0.06]
+        if ts and e["t"] < true_end(e["midi"], ts[-1]):
+            frag += 1
+    return {"recall": matched / len(truth), "dur_mae": float(np.mean(np.abs(derrs))) if derrs else None,
+            "frag": frag, "extra": len(events) - matched - frag, "false_cut": false_cut, "n": len(truth)}
+
+
+def main_noise(impls):
+    insts = {"lyre": build_lyre21("风物之诗琴"), "horn": build_horn()}
+    tot = {}
+    print("用例               噪音        impl  召回  时长MAE  碎片  伪音  误判截止")
+    for name, notes, timbre, mode, ik, ring in NOISE_CASES:
+        audio, truth = render(notes, timbre, mode)
+        for cname, cond in NOISE_CONDS:
+            a = add_noise(audio, cond) if cond else audio
+            for iname, mod in impls:
+                evs, _ = run_detector(mod, insts[ik], a)
+                s = score_noise(evs, truth, ring)
+                dm = "   —  " if s["dur_mae"] is None else f"{s['dur_mae']:6.1f}"
+                print(f"{name:16s} {cname:10s} {iname:4s} {s['recall']:.2f}  {dm}  {s['frag']:4d}  {s['extra']:4d}"
+                      f"   {s['false_cut']:3d}/{s['n']}")
+                t = tot.setdefault((iname, "干净" if not cond else "有噪音"),
+                                   {"rec": [], "dur": [], "frag": 0, "extra": 0, "fc": 0, "n": 0})
+                t["rec"].append(s["recall"])
+                if s["dur_mae"] is not None:
+                    t["dur"].append(s["dur_mae"])
+                t["frag"] += s["frag"]
+                t["extra"] += s["extra"]
+                t["fc"] += s["false_cut"]
+                t["n"] += s["n"]
+    print("\n=== 汇总")
+    for (iname, k), t in sorted(tot.items(), key=lambda kv: (kv[0][1], kv[0][0])):
+        print(f"  {k:4s} {iname:4s} 召回={np.mean(t['rec']):.3f}  时长MAE={np.mean(t['dur']):5.1f}ms  碎片={t['frag']:3d}"
+              f"  伪音={t['extra']:3d}  误判截止={t['fc']:3d}  （真值音 {t['n']}）")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--old", action="store_true", help="同时评测 git HEAD 版本")
     ap.add_argument("--only", default="", help="只跑名称包含该子串的用例")
+    ap.add_argument("--noise", action="store_true", help="游戏噪音场景（底噪/音效/背景音乐）下时长模块的敏感度")
     args = ap.parse_args()
     impls = [("new", load_detector_module(False))]
     if args.old:
         impls.insert(0, ("old", load_detector_module(True)))
+    if args.noise:
+        main_noise(impls)
+        return
     insts = {"lyre": build_lyre21("风物之诗琴"), "horn": build_horn()}
     summary = {name: [] for name, _ in impls}
     for name, notes, timbre, mode, inst_key, bpm_true, steal in CASES:

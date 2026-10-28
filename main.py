@@ -80,17 +80,26 @@ def analyze_file(wav_path, out_path=None, inst_name=None):
     inst = next((i for i in insts if i.name == inst_name), insts[0])
     x, sr = _read_wav(wav_path)
     det = NoteDetector(inst, sr=sr, sensitivity=0.55)
-    events, bpm, tonality = [], None, ""
+    events, bpm_track, tonality = [], [], ""
     block = 2048
     for i in range(0, len(x), block):
         r = det.feed(x[i:i + block])
         events.extend(r["note_events"])
         if r["bpm"] is not None:
-            bpm = r["bpm"]
+            bpm_track.append((r["bpm"], det.bpm_confidence))
         tonality = r["tonality"] or tonality
     r = det.feed(np.zeros(sr, dtype=np.float32))          # 补 1 s 静音让余音落音
     events.extend(r["note_events"])
     events.sort(key=lambda e: e["t"])
+    # 报告演奏期间的 BPM：取最后一个高置信度读数（≥60% 的起音间隔能被同一周期解释）——
+    # 录音结尾若只剩环境声/音效，那段时间的读数是被噪音起音带偏的低置信度值；
+    # 结尾读数本身可信时与直接取最后读数相同
+    bpm = None
+    good = [b for b, c in bpm_track if c >= 0.6]
+    if good:
+        bpm = good[-1]
+    elif bpm_track:
+        bpm = bpm_track[-1][0]
 
     if out_path is None:
         out_path = os.path.splitext(wav_path)[0] + "_分析.txt"

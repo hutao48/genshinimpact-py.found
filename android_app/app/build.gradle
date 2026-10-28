@@ -11,8 +11,8 @@ android {
         applicationId "com.genshin.detector"
         minSdk 24
         targetSdk 35
-        versionCode 8
-        versionName "1.0.0"
+        versionCode 9
+        versionName "1.0.1"
     }
 
     // 发布签名：设置了环境变量 ANDROID_KEYSTORE_FILE / ANDROID_KEYSTORE_PASSWORD /
