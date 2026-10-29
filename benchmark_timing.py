@@ -13,6 +13,7 @@
   python benchmark_timing.py               # 评测当前 detection.py
   python benchmark_timing.py --old         # 同时评测 git HEAD 版本做对比
   python benchmark_timing.py --noise --old # 游戏噪音场景（底噪/音效/背景音乐）下时长模块的敏感度对比
+  python benchmark_timing.py --tempo --old # 频繁变速：BPM 读数多快跟上新速度、稳定速度时是否乱跳
 """
 import argparse
 import importlib.util
@@ -458,17 +459,102 @@ def main_noise(impls):
               f"  伪音={t['extra']:3d}  误判截止={t['fc']:3d}  （真值音 {t['n']}）")
 
 
+# ---------------------------------------------------------------- 频繁变速（--tempo）
+QUANT = 1024 / 48000.0      # 原神音频按 1024 样本（21.3 ms）一块调度发声：起音时间落在这个网格上
+
+
+def seq_segments(segments, seed=1, jitter=0.008):
+    """按段生成演奏：segments = [(时长 s, 起音周期 s 或 None=停顿, 节奏型)]，节奏型为以周期为单位的音长（循环）。
+    人手抖动 + 原神 21.3 ms 发声网格量化。返回 (音符, 各段 (起, 止, BPM))"""
+    rng = np.random.default_rng(seed)
+    mel = [60, 62, 64, 65, 67, 69, 71, 72, 74, 76, 77, 79]
+    t, notes, segs = 0.5, [], []
+    q0 = float(rng.uniform(0, QUANT))
+    i = 0
+    for dur, p, pat in segments:
+        t0 = t
+        segs.append((t0, t0 + dur, None if p is None else 60.0 / p))
+        if p is None:
+            t += dur
+            continue
+        j = 0
+        while t < t0 + dur - 1e-9:
+            L = pat[j % len(pat)]
+            ton = t + float(rng.normal(0, jitter))
+            ton = q0 + round((ton - q0) / QUANT) * QUANT
+            notes.append((ton, min(0.3, 0.8 * L * p), mel[(i * 5) % len(mel)]))
+            t += L * p
+            i += 1
+            j += 1
+    return notes, segs
+
+
+TEMPO_CASES = [
+    ("频繁变速（仿实际演奏）", [(6, 0.213, [1]), (4, 0.14, [1]), (5, 0.085, [1]), (3, None, None),
+                       (6, 0.245, [1, 1, 2]), (3, 0.12, [1]), (4, 0.17, [1, 1, 1, 2]), (8, 0.30, [1, 2, 1]),
+                       (4, 0.17, [1]), (4, 0.15, [1, 1, 2]), (4, 0.21, [1]), (4, 0.23, [1, 2])]),
+    ("整数倍变速 200→400→200→100→200", [(6, 0.30, [1]), (5, 0.15, [1]), (5, 0.30, [1]), (6, 0.60, [1]), (6, 0.30, [1])]),
+    ("渐变 100→160→90", [(1.2, 0.6 - 0.025 * k, [1]) for k in range(9)] +
+                      [(1.2, 0.375 + 0.03 * k, [1]) for k in range(10)]),
+    ("稳定速度 四分+八分混合", [(24, 0.30, [2, 1, 1, 2, 2, 1, 1, 2])]),
+]
+
+
+def main_tempo(impls):
+    """BPM 跟随变速的速度：每段从开始到读数进入并保持在真值 ±5% 内的时间（"跟上"），
+    以及允许 1 s 固有延迟时读数在 ±5% 内的时间占比；稳定速度用例看读数是否乱跳"""
+    lyre = build_lyre21("风物之诗琴")
+    for name, segments in TEMPO_CASES:
+        notes, segs = seq_segments(segments)
+        audio, _ = render(notes, "lyre", "ring")
+        print(f"\n=== {name}")
+        rows = {}
+        for iname, mod in impls:
+            _, bpms = run_detector(mod, lyre, audio)
+            settle, within, n_all = [], 0, 0
+            for a, b, bpm in segs:
+                if bpm is None:
+                    continue
+                ts = [(t, v) for t, v in bpms if a <= t < b]
+                st = None
+                for k, (t, v) in enumerate(ts):
+                    if all(vv is not None and abs(vv / bpm - 1) <= 0.05 for _, vv in ts[k:]):
+                        st = t - a
+                        break
+                settle.append(st)
+                for t, v in bpms:
+                    if a <= t - 1.0 < b:
+                        n_all += 1
+                        within += int(v is not None and abs(v / bpm - 1) <= 0.05)
+            jumps = sum(1 for (_, v0), (_, v1) in zip(bpms, bpms[1:])
+                        if v0 is not None and v1 is not None and abs(v1 / v0 - 1) > 0.10)
+            rows[iname] = (settle, 100.0 * within / max(1, n_all), jumps)
+        print("  段（BPM）      " + "   ".join(f"{iname:>8s}" for iname in rows))
+        for k, (a, b, bpm) in enumerate([s for s in segs if s[2] is not None]):
+            cells = []
+            for iname in rows:
+                st = rows[iname][0][k]
+                cells.append("  未跟上 " if st is None else f"{st:6.1f} s")
+            print(f"  {a:5.1f}-{b:5.1f}s {bpm:6.1f}   " + "   ".join(cells))
+        for iname, (_, w, j) in rows.items():
+            print(f"  {iname:4s} 读数在 ±5% 内（容许 1 s 延迟）{w:5.1f}%   跳变（>10%）{j} 次")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--old", action="store_true", help="同时评测 git HEAD 版本")
     ap.add_argument("--only", default="", help="只跑名称包含该子串的用例")
     ap.add_argument("--noise", action="store_true", help="游戏噪音场景（底噪/音效/背景音乐）下时长模块的敏感度")
+    ap.add_argument("--tempo", action="store_true", help="频繁变速：BPM 读数多快跟上新速度、稳定时是否乱跳")
     args = ap.parse_args()
     impls = [("new", load_detector_module(False))]
     if args.old:
         impls.insert(0, ("old", load_detector_module(True)))
     if args.noise:
         main_noise(impls)
+        return
+    if args.tempo:
+        main_tempo(impls)
         return
     insts = {"lyre": build_lyre21("风物之诗琴"), "horn": build_horn()}
     summary = {name: [] for name, _ in impls}

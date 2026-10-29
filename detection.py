@@ -19,10 +19,13 @@
     趋势线不可靠时要求截止式的急速跌落（_end_time）。
 - BPM：同一起音（和弦）合并为一个事件 → 一/二/三阶起音间隔在候选周期上做软核打分
   （按倍数 k 降权，天然抑制"取半周期/倍周期"）→ 分段同相位网格的合并回归精修周期
-  （精度不受候选步长限制，休止/拖拍只影响局部）→ 小幅平滑 + 两次确认才跳变。
+  （精度不受候选步长限制，休止/拖拍只影响局部）。
+  跟踪（_current_bpm）：最近 6 个起音一致指向新速度即判定变速、从变速处开始新的速度段（约 1~1.5 s 跟上）；
+  同一速度段内加权估计、只做微调；整数倍的变化（可能只是节奏疏密变化）需持续更久才切换。
 - 调性：Krumhansl-Schmuckler 键位相关性分析（24 调）
 - 和弦：音级集合 → 和弦模板匹配
 """
+import bisect
 import threading
 import time
 from collections import deque
@@ -40,6 +43,13 @@ CHORD_SUFFIX = {
     "5": "(5)", "maj7": "maj7", "7": "7", "m7": "m7", "m7b5": "m7b5",
     "dim7": "dim7", "6": "6", "m6": "m6", "add9": "add9", "madd9": "madd9",
 }
+# 和弦命名的简洁度先验：同样能解释这些音时，优先常见、简单的和弦（三和弦 > 属七/七和弦 > 六、加九等）
+CHORD_PRIOR = {
+    "maj": 0.06, "min": 0.06, "7": 0.03, "m7": 0.02, "maj7": 0.02, "dim": 0.0, "sus4": 0.0,
+    "sus2": -0.01, "aug": -0.02, "m7b5": -0.01, "dim7": -0.02, "6": -0.03, "m6": -0.03,
+    "add9": -0.03, "madd9": -0.04,
+}
+MAJOR_SCALE = (0, 2, 4, 5, 7, 9, 11)
 
 # 逐帧记录复数谱的 MIDI 范围（覆盖全部乐器 ±12 半音移调）
 _TRACK_LO, _TRACK_HI = 34, 98
@@ -271,12 +281,21 @@ class NoteDetector:
         self._prev_mag = None
         self._recent_peak = 0.0       # 近期最大帧峰值（指数衰减），用于相对门限
         self._floor = 1e-7            # 自适应噪声底
-        self._bpm_smooth = None
-        self._bpm_pending = None
+        # 只从确认过的按键起音学习电平，停顿时保持，不随余音/背景声一起降低。
+        # 帧峰值的快速衰减仍用于结束已有音；不能拿它来决定多轻的声音也能开新音。
+        self._press_levels = deque(maxlen=24)
+        self._press_level = 0.0
+        self._display_keys = {}
         self._bpm_key = None
-        self._bpm_val = None
-        self.bpm_confidence = 0.0
-        self.chroma_note_log = []     # [time, midi, dur_ms, amp] 用于调性
+        # BPM 跟踪状态（见 _current_bpm）：当前周期、速度段起点、停顿后的起点、变速候选、纠正候选
+        self._bpm_reset()
+        self.chroma_note_log = []     # [time, midi, dur_ms, amp] 用于调性与和弦
+        # 和弦 / 调性的显示值与切换候选（防抖）
+        self._chord_disp = ""
+        self._chord_cand = None       # (候选文字, 首次出现时刻)
+        self._key_disp = None         # (root, "maj"/"min")
+        self._key_cand = None         # ((root, mode), 首次出现时刻)
+        self._key_p = None            # (显示的调, 平滑后的置信度)
 
     # ------------------------------------------------------------------
     def _now(self):
@@ -291,7 +310,7 @@ class NoteDetector:
             self._buf = np.concatenate([self._buf, chunk])
             self._of_buf = np.concatenate([self._of_buf, chunk])
             self._update_odf()
-            out = {"keys": {}, "note_events": [], "chord": "", "tonality": "",
+            out = {"keys": dict(self._display_keys), "note_events": [], "chord": "", "tonality": "",
                    "bpm": None, "t": 0.0}
             while len(self._buf) >= self.fft_size:
                 frame = self._buf[:self.fft_size]
@@ -299,7 +318,9 @@ class NoteDetector:
                 self._buf = self._buf[self.hop:]
                 self._buf_pos += self.hop
                 res = self._process_frame(frame, t_c)
-                out["keys"].update(res["keys"])
+                # 当前按键是最后一帧的快照，不能并集，否则同批内已结束的键仍会亮着。
+                self._display_keys = res["keys"]
+                out["keys"] = dict(self._display_keys)
                 out["note_events"].extend(res["note_events"])
             self._sim_t = self._now()
             out["t"] = self._sim_t
@@ -484,9 +505,13 @@ class NoteDetector:
         # 已活跃音只认"精确命中"的峰（四舍五入后的音高就是它本身）：背景音乐/音效里的半音、
         # 非白键音被吸附到相邻琴键时，不应把一个已经结束的音一直撑着
         exact_all = set(midis_all)
-        raw = set(snapped_new)
+        press_gate = self._press_gate()
+        raw = {m for m in snapped_new if m not in self.active
+               and self._amp_of(m, mag) >= press_gate}
         for m in self.active:
-            if m in exact_all and self._amp_of(m, mag) >= 0.15 * peak:
+            # 背景声恰好落在同一个音高，也不能无限续住已衰减的琴音。
+            if (m in exact_all and self._amp_of(m, mag) >=
+                    max(0.15 * peak, 0.035 * self.active[m]["maxamp"])):
                 raw.add(m)
 
         # 连续帧确认：连续缺席 2 帧才重置 streak
@@ -599,6 +624,10 @@ class NoteDetector:
     # 起音确认（BPM 用）与同键重按：起音前后整窗比较
     # ------------------------------------------------------------------
     RETRIG_DELAY = 0.18      # 起音后多久评估（需要 T+130 ms 处的"持续性"帧）
+
+    def _press_gate(self):
+        """新按键最低电平：相对已确认起音的稳健电平，整体音量较小时同比降低。"""
+        return self._press_level * (0.12 - 0.07 * self.sensitivity)
 
     def _eval_pending(self, t_now, events):
         while self._pending and self._pending[0] <= t_now - self.RETRIG_DELAY:
@@ -751,7 +780,8 @@ class NoteDetector:
         if jv.size:
             la_v, lb_v = _db(Xa[0, jv]), _db(Xb[0, jv])
             # 音高证据：乐器某个可用音的基频频点上升 ≥2 dB，且不是很弱的分量 → 这是一次真实按键（BPM 用）
-            if np.any((la_v - lb_v >= 2.0) & (la_v >= la_v.max() - 20.0)):
+            if np.any((la_v - lb_v >= 2.0) & (la_v >= la_v.max() - 20.0)
+                      & (np.abs(Xa[0, jv]) >= self._press_gate())):
                 self._add_beat_onset(T, strength)
         if not self.active:
             return
@@ -823,6 +853,8 @@ class NoteDetector:
     def _set_ref_db(self, a):
         """记录音符"刚按下"电平，并更新所属起音事件中最强音的电平（用于识别起音旁瓣）"""
         a["ref_db"] = float(_db(np.max(a["ref"])))
+        self._press_levels.append(float(np.max(a["ref"])))
+        self._press_level = float(np.median(self._press_levels))
         ev = a.get("ev")
         if ev is not None:
             ev[3] = max(ev[3], a["ref_db"])
@@ -1228,98 +1260,461 @@ class NoteDetector:
         }
 
     # ------------------------------------------------------------------
+    # BPM 跟踪：分段自适应 + 变速检测
+    # ------------------------------------------------------------------
+    BPM_P_BEAT = 0.20        # 节拍级起音周期范围 0.2~1.6 s（37.5~300 BPM，与旧版相同）
+    BPM_P_MAX = 1.60
+    BPM_P_MIN = 0.07         # 连续快速连音时放宽到 0.07 s（最高约 857 BPM），不再卡在 300 以下
+    BPM_N_REC = 6            # 变速检测看最近 6 个起音
+    BPM_CHANGE = 0.07        # 最近估计与当前值相差 7% 以上视为"不一致"
+    BPM_GAP = 2.5            # 停顿超过 2.5 s（且 > 4 个周期）→ 新的速度段
+    BPM_FAST_HOLD = 0.8      # 变快为 1/2、1/3、1/4：持续 0.8 s 才确认（偶尔几个细分音不算）
+    BPM_SLOW_SPAN = 3.2      # 变慢为 2、3、4 倍：符合新周期的连续间隔覆盖 3.2 s 才确认（一小段音符变稀疏不算）
+    BPM_TAU_MAX = 2.5        # 段内估计的时间常数上限（段越长越大 → 稳定速度下精度与旧版相当）
+    BPM_UNSUP = 3.0          # 当前值已有这么久得不到最近起音的支持（噪音多、开头误锁定）→ 改信长窗估计
+
+    def _bpm_kind(self, r):
+        """新旧周期之比 → 'slow'（≈2/3/4 倍）、'fast'（≈1/2、1/3、1/4）或 'free'（其它）。
+        当前处于快速连音（周期 < 0.2 s）时，变慢一律按普通变速处理：连音结束就尽快回到旋律速度"""
+        for k in (2, 3, 4):
+            if abs(r / k - 1.0) <= 0.05:
+                return "slow" if self._bpm_P >= self.BPM_P_BEAT else "free"
+            if abs(r * k - 1.0) <= 0.05:
+                return "fast"
+        return "free"
+
+    def _bpm_is_run(self, rec):
+        """最近的间隔是否构成"连续快速连音"：几乎全都相近（±35%）且都很短（< 0.21 s）"""
+        d = np.diff(np.asarray(rec))
+        med = float(np.median(d))
+        return med < 1.05 * self.BPM_P_BEAT and int(np.sum(np.abs(d / med - 1.0) <= 0.35)) >= d.size - 1
+
+    def _bpm_range(self, fast):
+        return (self.BPM_P_MIN, 1.05 * self.BPM_P_BEAT) if fast else (self.BPM_P_BEAT, self.BPM_P_MAX)
+
+    def _bpm_recent(self, rec, fast):
+        """最近几个起音的速度估计（不可靠时返回 None）。
+        周期 < 0.2 s 只在"连续快速连音"时才考虑：否则细周期能用 2~4 倍关系"解释"几乎任何零散间隔
+        （脚本谱的休止、噪音造成的多余起音），会误报翻倍的 BPM"""
+        lo, hi = self._bpm_range(fast)
+        e = estimate_ioi_period(np.asarray(rec), None, lo, hi)
+        return e if (e is not None and e["conf"] >= (0.7 if fast else 0.6)) else None
+
+    @staticmethod
+    def _bpm_fit_span(ts, pn, tol):
+        """从最新起音往回，连续符合新周期的间隔覆盖了多长时间（允许漏掉的起音：间隔 = 2 个周期）。
+        不把"两段相加为 1 个周期"当作多余起音合并——那正是八分音符对，合并会让四分+八分混合被误判为变慢"""
+        span, i = 0.0, len(ts) - 1
+        while i > 0:
+            d = ts[i] - ts[i - 1]
+            if abs(d - pn) <= tol or abs(d - 2.0 * pn) <= 1.4 * tol:
+                span += d
+                i -= 1
+            else:
+                break
+        return span
+
+    def _bpm_reset(self):
+        self._bpm_P = None            # 当前显示的起音周期（秒）
+        self._bpm_seg_start = -1e9    # 当前"速度段"的起点：变速或长停顿后重新开始
+        self._bpm_gap_start = -1e9    # 最近一次长停顿后的第一个起音
+        self._bpm_last_t = None       # 已检查过停顿的最后一个起音
+        self._bpm_chg = None          # 变速候选 (类型, 首次出现时刻, 连续次数, 新周期)
+        self._bpm_alt = None          # 长窗纠正候选（周期）
+        self._bpm_support_t = 0.0     # 最近一次"最近起音的估计与当前值一致"的时刻
+        self._bpm_val = None
+        self.bpm_confidence = 0.0
+
+    def _bpm_set(self, period, conf):
+        self._bpm_P = period
+        self._bpm_val = round(60.0 / period, 1)
+        self.bpm_confidence = conf
+
     def _current_bpm(self):
-        """BPM 起音序列（起音峰 + 音高证据，和弦已合并）→ estimate_ioi_period；仅在起音集合变化时重算"""
+        """BPM 起音序列（起音峰 + 音高证据，和弦已合并）→ 当前速度。仅在起音集合变化时重算。
+
+        旧做法（12 s 窗、近期加权、置信度低就保持、两次确认才跳变）在速度常变的演奏中会长时间不动：
+        段落里混着不同速度时置信度一直偏低，显示可以十几秒停在旧值上。现在：
+          1) 变速检测：最近 6 个起音的估计与当前值相差 > 7%，且最近 5 个间隔里 ≥3 个正好是新周期
+             （单个多余起音只能制造 1~2 个）、按"总跨度 / 周期数"复核后仍不同（长短交替的不均匀节奏不算）
+             → 连续两次即切换，从变速处开始新的速度段（约 1~1.5 s 跟上）；
+             新旧周期成整数倍时可能只是节奏疏密变化，需持续更久才切换（变快 0.8 s，变慢 3.2 s）；
+          2) 周期 < 0.2 s 只在"连续快速连音"时才考虑（_bpm_is_run），否则细周期会用倍数关系"解释"零散间隔；
+          3) 同一速度段内：段内起音加权估计，时间常数随段长增大到 2.5 s，只做 ±7% 内的微调；
+          4) 首次显示要求估计可靠（≥75% 间隔被解释）或连续两次一致；当前值 3 s 得不到最近起音支持
+             （噪音带来大量多余起音、开头误锁定）时改信 12 s 长窗估计；
+          5) 停顿 > 2.5 s 后开始新的速度段；12 s 内不足 5 个起音时清空显示。"""
         now = self._now()
-        lo_t = now - self.bpm_window
-        ev = [e for e in self.beat_onsets if e[0] > lo_t]
-        key = (self._onsets_ver, len(ev), ev[0][0] if ev else None)
+        bo = self.beat_onsets
+        if not bo or now - bo[-1][0] > self.bpm_window:
+            if self._bpm_val is not None or self._bpm_P is not None:
+                self._bpm_reset()
+            return None
+        key = self._onsets_ver
         if key == self._bpm_key:
             return self._bpm_val
         self._bpm_key = key
-        if len(ev) < 5:
-            self._bpm_val = None
+        ons = [e[0] for e in bo if e[0] > now - self.bpm_window]
+        if len(ons) < 5:
+            self._bpm_reset()
             return None
-        times = np.array([e[0] for e in ev])
-        # 近期起音权重更高：变速后约 4~6 s 即可跟上
-        w = np.exp(-(now - times) / (0.4 * self.bpm_window))
-        est = estimate_ioi_period(times, w)
-        if est is None:
+        # 长停顿 → 新的速度段
+        if self._bpm_last_t is not None:
+            prev = self._bpm_last_t
+            for t in ons:
+                if t <= self._bpm_last_t:
+                    continue
+                if t - prev > max(self.BPM_GAP, 4.0 * (self._bpm_P or 0.0)):
+                    self._bpm_seg_start = self._bpm_gap_start = t - 1e-6
+                prev = t
+        self._bpm_last_t = ons[-1]
+        recent = [t for t in ons if t >= self._bpm_gap_start]
+        rec = recent[-self.BPM_N_REC:]
+        fast = len(rec) >= 5 and self._bpm_is_run(rec)
+        e_rec = self._bpm_recent(rec, fast) if len(rec) >= 5 else None
+        if self._bpm_P is None:
+            # 首次给出速度：估计可靠（≥75% 的间隔被解释）立即显示，否则连续两次一致才显示
+            # （开头几个起音里混有噪音时不至于锁定到错误的速度）
+            if e_rec is not None:
+                c = self._bpm_chg
+                if e_rec["conf"] >= 0.75 or (c is not None and c[0] == "init"
+                                            and abs(e_rec["period"] / c[3] - 1.0) <= self.BPM_CHANGE):
+                    self._bpm_chg = None
+                    self._bpm_set(e_rec["period"], e_rec["conf"])
+                    self._bpm_seg_start = rec[0] - 1e-6
+                    self._bpm_support_t = now
+                else:
+                    self._bpm_chg = ("init", now, 1, e_rec["period"])
             return self._bpm_val
-        self.bpm_confidence = est["conf"]
-        if est["conf"] < 0.35:
-            return self._bpm_val
-        bpm = 60.0 / est["period"]
-        s = self._bpm_smooth
-        if s is None:
-            s = bpm
-        elif abs(bpm - s) / s <= 0.03:
-            s = 0.5 * s + 0.5 * bpm
-            self._bpm_pending = None
-        elif self._bpm_pending is not None and abs(bpm - self._bpm_pending) / self._bpm_pending <= 0.03:
-            s = bpm                       # 连续两次给出相同的新速度：确认变速，直接跳变
-            self._bpm_pending = None
-        else:
-            self._bpm_pending = bpm       # 单次离群：先记下，不立即采纳
-        self._bpm_smooth = s
-        self._bpm_val = round(s, 1)
+        P = self._bpm_P
+        if e_rec is not None and abs(e_rec["period"] / P - 1.0) > self.BPM_CHANGE:
+            pn = e_rec["period"]
+            # 用"最近几个起音的总跨度 / 周期数"复核：长短交替的不均匀节奏（如 275/322 ms 交替）会让
+            # 短窗估计落在其中一个值上，但平均周期并没有变
+            span = rec[-1] - rec[0]
+            p_span = span / max(1.0, float(round(span / pn)))
+            if abs(p_span / P - 1.0) <= self.BPM_CHANGE:
+                e_rec = None
+        if e_rec is not None and abs(e_rec["period"] / P - 1.0) > self.BPM_CHANGE:
+            pn = e_rec["period"]
+            kind = self._bpm_kind(pn / P)
+            c = self._bpm_chg
+            if c is not None and c[0] == kind and abs(pn / c[3] - 1.0) <= self.BPM_CHANGE:
+                self._bpm_chg = (kind, c[1], c[2] + 1, pn)
+            else:
+                self._bpm_chg = (kind, now, 1, pn)
+            _, since, cnt, _ = self._bpm_chg
+            tol = max(0.025, 0.12 * pn)
+            n_fit = int(np.sum(np.abs(np.diff(np.array(rec)) - pn) <= tol))
+            if kind == "slow":
+                ok = n_fit >= 3 and self._bpm_fit_span(recent, pn, tol) >= self.BPM_SLOW_SPAN
+            else:
+                ok = (n_fit >= 3 and cnt >= 2
+                      and now - since >= (self.BPM_FAST_HOLD if kind == "fast" else 0.0))
+            if ok:
+                self._bpm_chg = None
+                # 新的速度段从"间隔开始符合新周期"的那个起音算起（不含变速过渡处不规则的间隔）
+                i0 = len(rec) - 1
+                while i0 > 0:
+                    d = rec[i0] - rec[i0 - 1]
+                    k = max(1.0, float(round(d / pn)))
+                    if k > 2 or abs(d - k * pn) > tol * np.sqrt(k):
+                        break
+                    i0 -= 1
+                self._bpm_seg_start = rec[i0] - 1e-6
+                self._bpm_set(pn, e_rec["conf"])
+                self._bpm_support_t = now
+                self._bpm_alt = None
+                return self._bpm_val
+        elif e_rec is not None:
+            self._bpm_chg = None
+            self._bpm_support_t = now
+        seg = [t for t in recent if t >= self._bpm_seg_start][-48:]
+        if len(seg) >= 5:
+            tau = min(self.BPM_TAU_MAX, max(1.2, 0.35 * (now - seg[0])))
+            times = np.array(seg)
+            # 段内估计的周期范围：正在快速连音（或当前就是连音速度且最近仍是连音）用 0.07~0.21 s，否则 0.2~1.6 s
+            lo, hi = self._bpm_range(fast)
+            est = estimate_ioi_period(times, np.exp(-(now - times) / tau), lo, hi)
+            if est is not None and est["conf"] >= 0.4 and abs(est["period"] / P - 1.0) <= self.BPM_CHANGE:
+                self._bpm_set(est["period"], est["conf"])
+        # 当前值长时间得不到最近起音的支持（噪音带来大量多余起音、开头几个起音误锁定）：
+        # 改用旧版的长窗估计（12 s 内全部起音、近期加权）——起音越多越能从噪音中认出真实周期；连续两次一致才采纳
+        if now - self._bpm_support_t >= self.BPM_UNSUP and len(recent) >= 8:
+            times = np.array(recent)
+            lo, hi = self._bpm_range(fast)
+            est = estimate_ioi_period(times, np.exp(-(now - times) / (0.4 * self.bpm_window)), lo, hi)
+            if est is not None and est["conf"] >= 0.35 and abs(est["period"] / self._bpm_P - 1.0) > self.BPM_CHANGE:
+                a = self._bpm_alt
+                if a is not None and abs(est["period"] / a - 1.0) <= self.BPM_CHANGE:
+                    self._bpm_alt = None
+                    self._bpm_set(est["period"], est["conf"])
+                    self._bpm_support_t = now
+                    self._bpm_seg_start = recent[0] - 1e-6
+                else:
+                    self._bpm_alt = est["period"]
+            else:
+                self._bpm_alt = None
         return self._bpm_val
 
     # ------------------------------------------------------------------
-    def _current_tonality_text(self):
-        """Krumhansl-Schmuckler：最近 14s 音符（时长加权、指数衰减）→ 最可能调"""
-        now = self._now()
-        chroma = np.zeros(12)
-        weight_sum = 0.0
-        for t, midi, dur, amp in self.chroma_note_log:
-            age = now - t
-            if age > 14.0:
-                continue
-            # 时长权重封顶，避免长尾音过度主导
-            w = amp * max(0.25, min(1.0, dur / 450.0)) * np.exp(-age / 7.0)
-            chroma[midi % 12] += w
-            weight_sum += w
-        if weight_sum < 3.0:
-            return "分析中…（音符不足）"
-        chroma = chroma / (weight_sum + 1e-9)
+    # 调性
+    # ------------------------------------------------------------------
+    KEY_WINDOW = 20.0        # 用最近 20 s 内的音
+    KEY_MIN_NOTES = 6        # 至少 6 个音才给结论
+    KEY_SWITCH_S = 2.5       # 新的调持续领先 2.5 s 才切换显示
+    KEY_TEMP = 0.03          # 相关系数差 → 置信度的温度（差 0.03 ≈ 73%，差 0.1 ≈ 96%）
 
-        best_key, best_corr = None, -2.0
-        second_corr = -2.0
-        for root in range(12):
-            cm = np.corrcoef(np.roll(KS_MAJOR, root), chroma)[0, 1]
-            cn = np.corrcoef(np.roll(KS_MINOR, root), chroma)[0, 1]
-            for name, c in (("maj", cm), ("min", cn)):
-                if c > best_corr:
-                    second_corr = best_corr
-                    best_corr = c
-                    best_key = (root, name)
-                elif c > second_corr:
-                    second_corr = c
-        if best_key is None:
-            return "未知"
-        root, mode = best_key
-        text = f"{NOTE_NAMES[root]} 大调" if mode == "maj" else f"{NOTE_NAMES[root]} 小调"
-        conf = int(round(100 * max(0.0, (best_corr - 0.25)) / 0.65))
-        conf = max(5, min(99, conf))
-        return f"{text}（置信 {conf}%）"
+    def _key_candidates(self):
+        """候选调：乐器只有一套七声音阶（原神这几种琴都只有白键）时，曲子用的永远是这 7 个音，
+        真正要判断的只是主音——只在该音阶的大调与关系小调之间选（白键 = C 大调 / A 小调），
+        不会报出琴上弹不出来的调（如需要 F# 的 G 大调）。其它情况 24 个调都可能。"""
+        S = {m % 12 for m in self.instrument.valid_midis()}
+        for r in range(12):
+            if {(r + i) % 12 for i in MAJOR_SCALE} == S:
+                return [(r, "maj"), ((r + 9) % 12, "min")]
+        return [(r, md) for r in range(12) for md in ("maj", "min")]
+
+    @staticmethod
+    def _key_name(key):
+        return f"{NOTE_NAMES[key[0]]} 大调" if key[1] == "maj" else f"{NOTE_NAMES[key[0]]} 小调"
+
+    def _key_chroma(self, now):
+        """最近 KEY_WINDOW 秒的音级分布。每个音按"占时"（到下一个起音的时间，封顶 1 s）而不是余音长度加权
+        （拨弦低音余音长，按余音加权会被放大）；低音、句尾（其后有停顿）的音多加权——主音常出现在这两处"""
+        grp = self._onset_groups(e for e in self.chroma_note_log if 0.0 <= now - e[0] <= self.KEY_WINDOW)
+        rel = {id(e): w for g in grp for e, w in g}
+        log = [e for g in grp for e, _ in g]
+        if len(log) < self.KEY_MIN_NOTES:
+            return None
+        starts = [e[0] for e in log]
+        pitches = sorted(e[1] for e in log)
+        med_p = pitches[len(pitches) // 2]
+        occ = []
+        for i, e in enumerate(log):
+            j = bisect.bisect_right(starts, e[0] + 0.06, lo=i)
+            nxt = starts[j] if j < len(starts) else now
+            occ.append(min(1.0, max(0.12, nxt - e[0])))
+        med_occ = sorted(occ)[len(occ) // 2]
+        chroma = np.zeros(12)
+        for i, e in enumerate(log):
+            w = occ[i] * np.exp(-(now - e[0]) / 8.0) * rel[id(e)]
+            # 同时按下的一组里最低、且明显低于整体音区的音 = 低音
+            grp_lo = min(x[1] for x in log if abs(x[0] - e[0]) < 0.06)
+            if e[1] == grp_lo and e[1] <= med_p - 5:
+                w *= 1.5
+            j = bisect.bisect_right(starts, e[0] + 0.06, lo=i)
+            gap = (starts[j] if j < len(starts) else now) - e[0]
+            if gap >= max(0.6, 2.5 * med_occ):
+                w *= 1.6
+            chroma[e[1] % 12] += w
+        return chroma / (chroma.sum() + 1e-9)
+
+    def _current_tonality_text(self):
+        """Krumhansl-Schmuckler 调性轮廓匹配，候选限定在乐器能弹的调；
+        置信度 = 第一名相对第二名的把握（看领先多少，而不是相关系数本身的高低）；新调持续领先才切换"""
+        now = self._now()
+        chroma = self._key_chroma(now)
+        if chroma is None:
+            if self._key_disp is None:
+                return "分析中…（音符不足）"
+            return self._key_name(self._key_disp)
+        cands = self._key_candidates()
+        sc = []
+        for key in cands:
+            prof = KS_MAJOR if key[1] == "maj" else KS_MINOR
+            sc.append((float(np.corrcoef(np.roll(prof, key[0]), chroma)[0, 1]), key))
+        sc.sort(key=lambda x: -x[0])
+        (c1, best), (c2, _) = sc[0], sc[1]
+        p_best = 1.0 / (1.0 + np.exp(-(c1 - c2) / self.KEY_TEMP))
+        if self._key_disp is None:
+            self._key_disp = best
+        elif best != self._key_disp:
+            c = self._key_cand
+            if p_best >= 0.65:
+                if c is None or c[0] != best:
+                    self._key_cand = (best, now)
+                elif now - c[1] >= self.KEY_SWITCH_S:
+                    self._key_disp = best
+                    self._key_cand = None
+            else:
+                self._key_cand = None
+        else:
+            self._key_cand = None
+        disp = self._key_disp
+        c_disp = next(c for c, k in sc if k == disp)
+        c_other = max(c for c, k in sc if k != disp)
+        p_now = 1.0 / (1.0 + np.exp(-(c_disp - c_other) / self.KEY_TEMP))
+        # 显示的置信度做平滑（约 0.5 s），避免数字每帧跳动；换调时重新开始
+        if self._key_p is None or self._key_p[0] != disp:
+            self._key_p = (disp, p_now)
+        else:
+            self._key_p = (disp, 0.9 * self._key_p[1] + 0.1 * p_now)
+        p = self._key_p[1]
+        name = self._key_name(disp)
+        if p < 0.6:
+            other = next(k for c, k in sc if k != disp)
+            return f"{name}（与 {self._key_name(other)} 难分）"
+        return f"{name}（置信 {int(5 * round(20 * p))}%）"
 
     # ------------------------------------------------------------------
-    def _current_chord_text(self):
-        pcs = sorted({m % 12 for m in self.active.keys()})
-        if len(pcs) < 2:
-            return ""
-        ck = self.instrument.match_chord_key(pcs)
-        if ck:
-            return f"{ck[1]}（键 {ck[0]}）"
+    # 和弦
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _onset_groups(entries):
+        """按起音时刻分组（相差 < 60 ms 算同时按下）→ [[(记录, 权重), ...], ...]。
+        真实琴音的敲击会在相邻频点产生"假音"（比真音弱 10~25 dB）；但和弦里的低音有时也只有 -14 dB 左右，
+        单靠电平分不开。规则：组内电平 ≥ 最强音 -8 dB 的是"强音"（权重 1）；-8~-16 dB 的弱音只有在
+        同一组已有 ≥2 个强音（确实是同时按下的和弦）时才保留、按相对电平加权；更弱的一律视为假音"""
+        groups = []
+        for e in sorted(entries, key=lambda e: e[0]):
+            if groups and e[0] - groups[-1][-1][0] < 0.06:
+                groups[-1].append(e)
+            else:
+                groups.append([e])
+        out = []
+        for g in groups:
+            amax = max(e[3] for e in g) or 1.0
+            strong = [(e, 1.0) for e in g if e[3] >= 0.4 * amax]
+            weak = [(e, e[3] / amax) for e in g if 0.15 * amax <= e[3] < 0.4 * amax]
+            out.append(strong + (weak if len(strong) >= 2 else []))
+        return out
+
+    def _harmony_window(self, now):
+        """当前和声窗口 → ([(midi, 权重)], 低音 midi, 类型) 或 None；类型：
+          "block"  最近 2 s 内有一组同时按下（起音相差 < 60 ms）、≥3 个不同音级的音，且之后没有新的低音
+                   → 就用这一组：之前弹过还在响的音（拨弦余音 1~3 s）、之后在和弦上弹的旋律音都不改变和弦；
+          "bass"   分解和弦：从最近一个低音（比最近 2 s 内整体音区低 5 个半音以上、且是之后最低的音）累积到现在；
+          "arp"    没有低音：用最近约 2.5 个起音周期（0.8~1.8 s）的音，要求全是同一个三和弦/七和弦的音。
+        后两种情况下，若低音之上的音多数是级进（相邻两音只差 1~2 个半音）→ 这是旋律，不报和弦。
+        窗口里没有新音时，若最后一组同时按下的音仍在发声（圆号按住、琴的和弦余音）→ 仍是那个和弦"""
+        rec = sorted((e for e in self.chroma_note_log[-96:] if 0.0 <= now - e[0] <= 2.0), key=lambda e: e[0])
+        if not rec:
+            act = sorted(((a["start"], m, 0.0, a.get("amp", 1.0)) for m, a in self.active.items()), key=lambda e: e[0])
+            if not act:
+                return None
+            last_t = act[-1][0]
+            grp = [e for e in act if last_t - e[0] < 0.06]
+            if len({e[1] % 12 for e in grp}) < 3:
+                return None
+            rec = grp
+        groups = [g for g in self._onset_groups(rec) if g]
+        if not groups:
+            return None
+        rec = [e for g in groups for e, _ in g]
+        pitches = sorted(e[1] for e in rec)
+        med_all = pitches[len(pitches) // 2]
+        # 最近的低音起点
+        bass_gi = None
+        for gi in range(len(groups) - 1, -1, -1):
+            lo = min(e[1] for e, _ in groups[gi])
+            after = [e[1] for g in groups[gi + 1:] for e, _ in g]
+            if lo <= med_all - 5 and all(m > lo for m in after):
+                bass_gi = gi
+                break
+        # 最近的块和弦（同时按下 ≥3 个音级），且之后没有新的低音
+        for gi in range(len(groups) - 1, -1, -1):
+            if len({e[1] % 12 for e, _ in groups[gi]}) >= 3:
+                if bass_gi is None or bass_gi <= gi:
+                    g = groups[gi]
+                    # 低音：强音里最低的；弱音只有在它的音级没被强音占着时才可能是低音
+                    # （和强音同音级的弱音多半是低八度的假音，不应把和弦变成转位）
+                    strong_pcs = {e[1] % 12 for e, w in g if w >= 1.0}
+                    bass = min(e[1] for e, w in g if w >= 1.0 or e[1] % 12 not in strong_pcs)
+                    return [(e[1], w) for e, w in g], bass, "block"
+                break
+        if bass_gi is not None:
+            notes = [(e, w) for g in groups[bass_gi:] for e, w in g]
+            kind = "bass"
+        else:
+            P = self._bpm_P or 0.4
+            win = min(1.8, max(0.8, 2.5 * P))
+            notes = [(e, w) for g in groups for e, w in g if now - e[0] <= win]
+            if not notes:
+                return None
+            kind = "arp"
+        lo = min(e[1] for e, _ in notes)
+        upper = [e[1] for e, _ in notes if e[1] != lo]
+        steps = [abs(b - a) for a, b in zip(upper, upper[1:]) if b != a]
+        if len(steps) >= 2 and sum(1 for d in steps if d <= 2) > 0.4 * len(steps):
+            return None                         # 低音之上是级进的旋律，不是分解和弦
+        ws = [(e[1], w * (1.2 if e[1] == lo else 1.0)) for e, w in notes]
+        return ws, lo, kind
+
+    @staticmethod
+    def _name_chord(ws, bass, kind):
+        """加权模板匹配：覆盖率（窗口里的音有多少能被这个和弦解释）+ 简洁度先验 + 低音是根音加分。
+        返回和弦名；None = 不是和弦（旋律）；"?" = 还判断不了（分解和弦刚开始，音还不够）。
+        - 少于 3 个不同音级不判和弦；但分解和弦里"低音 + 其上大/小三度"已足以暗示以低音为根的三和弦；
+        - 分解和弦只认三和弦/七和弦且不允许省略音（挂留、加九、六和弦多半是旋律经过音凑出来的），
+          同时按下的块和弦才允许全部模板、七和弦可省略五音；
+        - 覆盖率不够（旋律经过音太多）不判"""
+        w = {}
+        for m, x in ws:
+            w[m % 12] = w.get(m % 12, 0.0) + x
+        bass_pc = bass % 12
+        if len(w) < 3:
+            if kind == "bass" and len(w) == 2:
+                other = next(pc for pc in w if pc != bass_pc) if bass_pc in w else None
+                if other is not None and (other - bass_pc) % 12 in (3, 4):
+                    return NOTE_NAMES[bass_pc] + ("" if (other - bass_pc) % 12 == 4 else "m")
+                return "?"
+            return "?" if kind == "bass" else None
+        total = sum(w.values())
+        allowed = CHORD_TEMPLATES if kind == "block" else {
+            k: v for k, v in CHORD_TEMPLATES.items() if k in ("maj", "min", "dim", "aug", "7", "m7", "maj7", "m7b5", "dim7")}
         best = None
         for root in range(12):
-            for tname, tpl in CHORD_TEMPLATES.items():
+            for name, tpl in allowed.items():
+                if name == "5":
+                    continue
                 tset = {(root + i) % 12 for i in tpl}
-                if tset <= set(pcs):
-                    score = len(tset) - 0.2 * (len(pcs) - len(tset))
-                    if best is None or score > best[0]:
-                        best = (score, root, tname, tset)
+                missing = tset - set(w)
+                if missing and not (kind == "block" and len(tset) == 4 and missing == {(root + 7) % 12}):
+                    continue                  # 只有同时按下的七和弦允许省略五音
+                cover = sum(x for pc, x in w.items() if pc in tset) / total
+                score = cover - 0.04 * (len(tset) - 3) + CHORD_PRIOR.get(name, 0.0)
+                if missing:
+                    score -= 0.08
+                if bass_pc == root:
+                    score += 0.08
+                elif bass_pc in tset:
+                    score += 0.02
+                if best is None or score > best[0]:
+                    best = (score, root, name, cover, tset)
         if best is None:
-            return ""
-        _, root, tname, _ = best
-        return f"{NOTE_NAMES[root]}{CHORD_SUFFIX[tname]}"
+            return None
+        _, root, name, cover, tset = best
+        if cover < {"block": 0.75, "bass": 0.85, "arp": 0.97}[kind]:
+            return None
+        text = NOTE_NAMES[root] + CHORD_SUFFIX[name]
+        if bass_pc != root and bass_pc in tset:
+            text += "/" + NOTE_NAMES[bass_pc]          # 转位：低音不是根音
+        return text
+
+    def _current_chord_text(self):
+        """当前和弦（无和弦时为空字符串）。同时按下的块和弦立即显示；其它变化要连续保持 0.15 s
+        （变为"无和弦"要 0.4 s），避免分解和弦、经过音造成的闪烁"""
+        now = self._now()
+        hw = self._harmony_window(now)
+        cand, block = "", False
+        if hw is not None:
+            ws, bass, kind = hw
+            block = kind == "block"
+            ck = self.instrument.match_chord_key(sorted({m % 12 for m, _ in ws})) if block else None
+            cand = f"{ck[1]}（键 {ck[0]}）" if ck else (self._name_chord(ws, bass, kind) or "")
+            if cand == "?":
+                return self._chord_disp           # 新的分解和弦刚开始、音还不够：先保持原来的显示
+        if cand == self._chord_disp:
+            self._chord_cand = None
+        elif block and cand:
+            self._chord_disp = cand
+            self._chord_cand = None
+        else:
+            c = self._chord_cand
+            if c is None or c[0] != cand:
+                self._chord_cand = (cand, now)
+            elif now - c[1] >= (0.15 if cand else 0.4):
+                self._chord_disp = cand
+                self._chord_cand = None
+        return self._chord_disp

@@ -41,7 +41,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             val title = TextView(this).apply {
-                text = "原神乐器演奏检测器 v1.0.1"
+                text = "原神乐器演奏检测器 v1.0.2"
                 setTextColor(0xFFE8E8E8.toInt())
                 textSize = 20f
                 setPadding(0, 0, 0, 24)

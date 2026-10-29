@@ -49,6 +49,11 @@ a = Analysis(
     noarchive=False,
     optimize=0,
 )
+# QtCore 使用 Windows 系统 ICU 的无版本符号。PATH 中 Poppler 等工具的同名
+# icuuc.dll 使用带版本后缀的另一套符号，误收进包会使 QtCore 报缺少入口点。
+# 与其它 Windows 系统 DLL 一样，在目标机器上由系统加载，不打包外部同名库。
+system_icu = {"icu.dll", "icuuc.dll", "icuin.dll", "icudt.dll"}
+a.binaries = [entry for entry in a.binaries if entry[0].lower() not in system_icu]
 pyz = PYZ(a.pure)
 
 exe = EXE(

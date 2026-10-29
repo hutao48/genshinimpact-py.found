@@ -75,20 +75,31 @@ def analyze_file(wav_path, out_path=None, inst_name=None):
     import numpy as np
     from instruments import all_instruments
     from detection import NoteDetector, END_REASON_TEXT
+    from screening import Screener, LEVEL_TEXT, KIND_TEXT
 
     insts = all_instruments()
     inst = next((i for i in insts if i.name == inst_name), insts[0])
     x, sr = _read_wav(wav_path)
     det = NoteDetector(inst, sr=sr, sensitivity=0.55)
+    scr = Screener(inst, sr=sr)
+    found = {}
     events, bpm_track, tonality = [], [], ""
+    bpm_curve = []                                        # (时刻, BPM)：读数每次变化时记一条，供报告末尾的"BPM 随时间"
     block = 2048
     for i in range(0, len(x), block):
         r = det.feed(x[i:i + block])
+        for f in scr.process(x[i:i + block], det):
+            found[f["id"]] = f
         events.extend(r["note_events"])
         if r["bpm"] is not None:
             bpm_track.append((r["bpm"], det.bpm_confidence))
+        if not bpm_curve or r["bpm"] != bpm_curve[-1][1]:
+            bpm_curve.append((min(len(x), i + block) / sr, r["bpm"]))
         tonality = r["tonality"] or tonality
-    r = det.feed(np.zeros(sr, dtype=np.float32))          # 补 1 s 静音让余音落音
+    z = np.zeros(sr, dtype=np.float32)                    # 补 1 s 静音让余音落音
+    r = det.feed(z)
+    for f in scr.process(z, det) + scr.process(np.zeros(0, dtype=np.float32), det, final=True):
+        found[f["id"]] = f
     events.extend(r["note_events"])
     events.sort(key=lambda e: e["t"])
     # 报告演奏期间的 BPM：取最后一个高置信度读数（≥60% 的起音间隔能被同一周期解释）——
@@ -115,6 +126,21 @@ def analyze_file(wav_path, out_path=None, inst_name=None):
         ioi = "—" if e.get("ioi_ms") is None else f"{e['ioi_ms']:.0f}"
         end = END_REASON_TEXT.get(e.get("end"), e.get("end") or "")
         lines.append(f"{e['t']:.3f}\t{e['key']}\t{e['name']}\t{e['dur_ms']:.0f}\t{ioi}\t{end}")
+    # 边界值排查：超出人手极限的操作（证据，不是定论）
+    lines += ["", f"边界值排查：{scr.summary()}"]
+    if found:
+        lines.append("时间(s)\t检查项\t结论\t现象\t说明")
+        for f in sorted(found.values(), key=lambda f: f["t"]):
+            lines.append(f"{f['t']:.3f}\t{KIND_TEXT.get(f['kind'], f['kind'])}\t{LEVEL_TEXT.get(f['level'], '')}\t"
+                         f"{f['title']}\t{f['text']}")
+    # BPM 随时间：每秒一个读数（与实时界面上看到的一致：起音进入 BPM 计算有约 0.2 s 延迟）
+    lines += ["", "BPM 随时间（每秒读数）", "时间(s)\tBPM"]
+    k, cur = 0, None
+    for s in range(1, int(len(x) / sr) + 1):
+        while k < len(bpm_curve) and bpm_curve[k][0] <= s:
+            cur = bpm_curve[k][1]
+            k += 1
+        lines.append(f"{s}\t{'—' if cur is None else f'{cur:.1f}'}")
     with open(out_path, "w", encoding="utf-8-sig") as f:
         f.write("\n".join(lines) + "\n")
     return out_path

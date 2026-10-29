@@ -89,8 +89,17 @@ class NoteDetector(private val sensitivity: Float = 0.7f, srVal: Int = 44100) {
     private val onsets = ArrayList<DoubleArray>()          // [t, 强度]（和弦已合并）
     private var onsetsVer = 0
     private var bpmKey = -1
-    private var bpmSmooth: Double? = null
-    private var bpmPending: Double? = null
+    // BPM 跟踪状态（与 detection.py 的 _current_bpm 一致：分段自适应 + 变速检测）
+    private var bpmP: Double? = null          // 当前显示的起音周期（秒）
+    private var bpmSegStart = -1e9            // 当前"速度段"的起点：变速或长停顿后重新开始
+    private var bpmGapStart = -1e9            // 最近一次长停顿后的第一个起音
+    private var bpmLastT: Double? = null      // 已检查过停顿的最后一个起音
+    private var chgKind: String? = null       // 变速候选：类型（init / free / fast / slow）
+    private var chgSince = 0.0                //           首次出现时刻
+    private var chgCount = 0                  //           连续次数
+    private var chgPeriod = 0.0               //           新周期
+    private var bpmAlt: Double? = null        // 长窗纠正候选（周期）
+    private var bpmSupportT = 0.0             // 最近一次"最近起音的估计与当前值一致"的时刻
 
     var bpm: Float? = null
         private set
@@ -363,36 +372,185 @@ class NoteDetector(private val sensitivity: Float = 0.7f, srVal: Int = 44100) {
     }
 
     // ------------------------------------------------------------------ BPM
-    private fun updateBpm(nowT: Double) {
-        val window = 12.0
-        val ev = onsets.filter { it[0] > nowT - window }
-        val key = onsetsVer * 31 + (ev.firstOrNull()?.get(0)?.times(1000)?.toInt() ?: 0)
-        if (key == bpmKey) return
-        bpmKey = key
-        if (ev.size < 5) { bpm = null; return }
-        val times = DoubleArray(ev.size) { ev[it][0] }
-        val w = DoubleArray(ev.size) { exp(-(nowT - times[it]) / (0.4 * window)) }
-        val est = estimateIoiPeriod(times, w) ?: return
-        bpmConfidence = est.second.toFloat()
-        if (est.second < 0.35) return
-        val nb = 60.0 / est.first
-        val s = bpmSmooth
-        val ps = bpmPending
-        bpmSmooth = when {
-            s == null -> nb
-            abs(nb - s) / s <= 0.03 -> { bpmPending = null; 0.5 * s + 0.5 * nb }
-            ps != null && abs(nb - ps) / ps <= 0.03 -> { bpmPending = null; nb }  // 连续两次相同：确认变速
-            else -> { bpmPending = nb; s }                                     // 单次离群：暂不采纳
+    // 与 detection.py 的 _current_bpm 一致：
+    //   最近 6 个起音一致指向新速度 → 判定变速，从变速处开始新的速度段（约 1~1.5 s 跟上）；
+    //   新旧周期成整数倍（可能只是节奏疏密变化）需持续更久（变快 0.8 s、变慢 3.2 s）；
+    //   同一速度段内加权估计、只做 ±7% 的微调；周期 < 0.2 s 只在连续快速连音时才考虑；
+    //   当前值 3 s 得不到最近起音支持时改信 12 s 长窗估计（噪音多、开头误锁定时纠正）。
+    private val bpmWindow = 12.0
+    private val bpmPBeat = 0.20
+    private val bpmPMax = 1.60
+    private val bpmPMinFast = 0.07
+    private val bpmNRec = 6
+    private val bpmChange = 0.07
+    private val bpmGap = 2.5
+    private val bpmFastHold = 0.8
+    private val bpmSlowSpan = 3.2
+    private val bpmTauMax = 2.5
+    private val bpmUnsup = 3.0
+
+    private fun bpmReset() {
+        bpmP = null; bpmSegStart = -1e9; bpmGapStart = -1e9; bpmLastT = null
+        chgKind = null; bpmAlt = null; bpm = null; bpmConfidence = 0f
+    }
+
+    private fun bpmSet(period: Double, conf: Double) {
+        bpmP = period
+        bpm = (round(60.0 / period * 10.0) / 10.0).toFloat()
+        bpmConfidence = conf.toFloat()
+    }
+
+    private fun median(a: DoubleArray): Double {
+        val s = a.sortedArray()
+        val n = s.size
+        return if (n % 2 == 1) s[n / 2] else 0.5 * (s[n / 2 - 1] + s[n / 2])
+    }
+
+    /** 新旧周期之比 → slow（≈2/3/4 倍）、fast（≈1/2、1/3、1/4）或 free；当前为快速连音时变慢一律按 free 处理 */
+    private fun bpmKind(r: Double, p: Double): String {
+        for (k in 2..4) {
+            if (abs(r / k - 1.0) <= 0.05) return if (p >= bpmPBeat) "slow" else "free"
+            if (abs(r * k - 1.0) <= 0.05) return "fast"
         }
-        bpm = (round(bpmSmooth!! * 10.0) / 10.0).toFloat()
+        return "free"
+    }
+
+    /** 最近的间隔是否构成"连续快速连音"：几乎全都相近（±35%）且都很短（< 0.21 s） */
+    private fun isRun(rec: DoubleArray): Boolean {
+        val d = DoubleArray(rec.size - 1) { rec[it + 1] - rec[it] }
+        val med = median(d)
+        if (med <= 0.0 || med >= 1.05 * bpmPBeat) return false
+        var c = 0
+        for (x in d) if (abs(x / med - 1.0) <= 0.35) c++
+        return c >= d.size - 1
+    }
+
+    private fun rangeLo(fast: Boolean) = if (fast) bpmPMinFast else bpmPBeat
+    private fun rangeHi(fast: Boolean) = if (fast) 1.05 * bpmPBeat else bpmPMax
+
+    private fun recentEstimate(rec: DoubleArray, fast: Boolean): Pair<Double, Double>? {
+        val e = estimateIoiPeriod(rec, DoubleArray(rec.size) { 1.0 }, rangeLo(fast), rangeHi(fast)) ?: return null
+        return if (e.second >= (if (fast) 0.7 else 0.6)) e else null
+    }
+
+    /** 从最新起音往回，连续符合新周期的间隔覆盖的时长（允许漏掉的起音：间隔 = 2 个周期） */
+    private fun fitSpan(ts: List<Double>, pn: Double, tol: Double): Double {
+        var span = 0.0
+        var i = ts.size - 1
+        while (i > 0) {
+            val d = ts[i] - ts[i - 1]
+            if (abs(d - pn) <= tol || abs(d - 2.0 * pn) <= 1.4 * tol) { span += d; i-- } else break
+        }
+        return span
+    }
+
+    private fun updateBpm(nowT: Double) {
+        if (onsets.isEmpty() || nowT - onsets.last()[0] > bpmWindow) {
+            if (bpm != null || bpmP != null) bpmReset()
+            return
+        }
+        if (onsetsVer == bpmKey) return
+        bpmKey = onsetsVer
+        val ons = onsets.filter { it[0] > nowT - bpmWindow }.map { it[0] }
+        if (ons.size < 5) { bpmReset(); return }
+        // 长停顿 → 新的速度段
+        val lastT = bpmLastT
+        if (lastT != null) {
+            var prev: Double = lastT
+            for (t in ons) {
+                if (t <= lastT) continue
+                if (t - prev > max(bpmGap, 4.0 * (bpmP ?: 0.0))) { bpmSegStart = t - 1e-6; bpmGapStart = t - 1e-6 }
+                prev = t
+            }
+        }
+        bpmLastT = ons.last()
+        val recent = ons.filter { it >= bpmGapStart }
+        val rec = recent.takeLast(bpmNRec).toDoubleArray()
+        val fast = rec.size >= 5 && isRun(rec)
+        var eRec = if (rec.size >= 5) recentEstimate(rec, fast) else null
+        val p0 = bpmP
+        if (p0 == null) {
+            // 首次给出速度：估计可靠（≥75% 的间隔被解释）立即显示，否则连续两次一致才显示
+            val e = eRec ?: return
+            if (e.second >= 0.75 || (chgKind == "init" && abs(e.first / chgPeriod - 1.0) <= bpmChange)) {
+                chgKind = null
+                bpmSet(e.first, e.second)
+                bpmSegStart = rec[0] - 1e-6
+                bpmSupportT = nowT
+            } else {
+                chgKind = "init"; chgSince = nowT; chgCount = 1; chgPeriod = e.first
+            }
+            return
+        }
+        val p = p0
+        val er0 = eRec
+        if (er0 != null && abs(er0.first / p - 1.0) > bpmChange) {
+            // 用"最近几个起音的总跨度 / 周期数"复核：长短交替的不均匀节奏不算变速
+            val span = rec[rec.size - 1] - rec[0]
+            val pSpan = span / max(1.0, Math.rint(span / er0.first))
+            if (abs(pSpan / p - 1.0) <= bpmChange) eRec = null
+        }
+        val e = eRec
+        if (e != null && abs(e.first / p - 1.0) > bpmChange) {
+            val pn = e.first
+            val kind = bpmKind(pn / p, p)
+            if (chgKind == kind && abs(pn / chgPeriod - 1.0) <= bpmChange) { chgCount++; chgPeriod = pn }
+            else { chgKind = kind; chgSince = nowT; chgCount = 1; chgPeriod = pn }
+            val tol = max(0.025, 0.12 * pn)
+            var nFit = 0
+            for (i in 1 until rec.size) if (abs(rec[i] - rec[i - 1] - pn) <= tol) nFit++
+            val ok = if (kind == "slow") nFit >= 3 && fitSpan(recent, pn, tol) >= bpmSlowSpan
+                     else nFit >= 3 && chgCount >= 2 && nowT - chgSince >= (if (kind == "fast") bpmFastHold else 0.0)
+            if (ok) {
+                chgKind = null
+                // 新的速度段从"间隔开始符合新周期"的那个起音算起
+                var i0 = rec.size - 1
+                while (i0 > 0) {
+                    val d = rec[i0] - rec[i0 - 1]
+                    val k = max(1.0, Math.rint(d / pn))
+                    if (k > 2 || abs(d - k * pn) > tol * sqrt(k)) break
+                    i0--
+                }
+                bpmSegStart = rec[i0] - 1e-6
+                bpmSet(pn, e.second)
+                bpmSupportT = nowT
+                bpmAlt = null
+                return
+            }
+        } else if (e != null) {
+            chgKind = null
+            bpmSupportT = nowT
+        }
+        val seg = recent.filter { it >= bpmSegStart }.takeLast(48)
+        if (seg.size >= 5) {
+            val tau = min(bpmTauMax, max(1.2, 0.35 * (nowT - seg[0])))
+            val times = seg.toDoubleArray()
+            val est = estimateIoiPeriod(times, DoubleArray(times.size) { exp(-(nowT - times[it]) / tau) },
+                                        rangeLo(fast), rangeHi(fast))
+            if (est != null && est.second >= 0.4 && abs(est.first / p - 1.0) <= bpmChange) bpmSet(est.first, est.second)
+        }
+        // 当前值长时间得不到最近起音的支持：改用 12 s 长窗估计，连续两次一致才采纳
+        if (nowT - bpmSupportT >= bpmUnsup && recent.size >= 8) {
+            val times = recent.toDoubleArray()
+            val est = estimateIoiPeriod(times, DoubleArray(times.size) { exp(-(nowT - times[it]) / (0.4 * bpmWindow)) },
+                                        rangeLo(fast), rangeHi(fast))
+            val cur = bpmP ?: return
+            if (est != null && est.second >= 0.35 && abs(est.first / cur - 1.0) > bpmChange) {
+                val a = bpmAlt
+                if (a != null && abs(est.first / a - 1.0) <= bpmChange) {
+                    bpmAlt = null
+                    bpmSet(est.first, est.second)
+                    bpmSupportT = nowT
+                    bpmSegStart = recent[0] - 1e-6
+                } else bpmAlt = est.first
+            } else bpmAlt = null
+        }
     }
 
     /** 起音时间 → (起音周期秒, 置信度)。算法与 detection.py 的 estimate_ioi_period 一致。 */
-    private fun estimateIoiPeriod(t: DoubleArray, w0: DoubleArray): Pair<Double, Double>? {
+    private fun estimateIoiPeriod(t: DoubleArray, w0: DoubleArray, pMin: Double = 0.20, pMax: Double = 1.60): Pair<Double, Double>? {
         val n = t.size
         if (n < 4) return null
-        val pMin = 0.20
-        val pMax = 1.60
         if (t[n - 1] - t[0] <= 2 * pMin) return null
         val d = ArrayList<Double>()
         val wd = ArrayList<Double>()

@@ -10,6 +10,7 @@ import sys
 import numpy as np
 from instruments import build_lyre21, build_horn, build_youko
 from detection import NoteDetector
+from screening import Screener
 
 SR = 48000
 GAP = 0.02
@@ -106,6 +107,30 @@ def run_test(name, inst, events, expect_bpm=None, mono=True):
     return problems
 
 
+def run_screen_test(name, inst, audio, expect):
+    """边界值排查：expect = 应报出的发现类型集合（"keys" 同时按键 / "regular" 机械等间隔），空集合 = 不应有任何发现"""
+    det = NoteDetector(inst, sr=SR, sensitivity=0.6, sim_clock=True)
+    scr = Screener(inst, sr=SR)
+    found = {}
+    blk = 2048
+    audio = np.concatenate([audio, np.zeros(SR, dtype=np.float32)])
+    for i in range(0, len(audio) - blk + 1, blk):
+        x = audio[i:i + blk]
+        det.feed(x)
+        for f in scr.process(x, det):
+            found[f["id"]] = f
+    for f in scr.process(np.zeros(0, dtype=np.float32), det, final=True):
+        found[f["id"]] = f
+    kinds = {f["kind"] for f in found.values()}
+    print(f"\n===== {name} =====")
+    print("排查:", scr.summary())
+    for f in found.values():
+        print(f"  {f['t']:.2f}s {f['title']}")
+    if kinds != set(expect):
+        return [f"{name}: 期望 {sorted(expect) or '无发现'}，实际 {sorted(kinds) or '无发现'}"]
+    return []
+
+
 if __name__ == "__main__":
     failed = []
     lyre = build_lyre21("风物之诗琴")
@@ -130,6 +155,21 @@ if __name__ == "__main__":
     # ---- BPM 精确测试：同一键连按 12 次，0.42 s 音 → IOI 0.44 s
     ev = [(60, 0.42)] * 12
     failed += run_test("同键连按 ×12 (IOI 0.44s → 136.4 BPM)", lyre, ev, 60 / 0.44)
+
+    # ---- 边界值排查：先弹 10 个单音（学音色的谐波），再同时按下 13 个键 → 超过 10 根手指
+    rng = np.random.default_rng(3)
+    big = [48, 52, 55, 59, 60, 64, 67, 71, 72, 74, 76, 79, 83]
+    ev = [(int(m), 0.3) for m in rng.choice(lyre.valid_midis(), 10)] + [(big, 1.2)]
+    failed += run_screen_test("排查：同时按下 13 个键", lyre, play_sequence(ev), {"keys"})
+    # ---- 6 个键的和弦 + 旋律：不应有任何发现
+    ev = [(m, 0.3) for m in [60, 64, 67, 72, 71, 67]] + [([48, 55, 60, 64, 67, 72], 1.0)] + \
+         [(m, 0.3) for m in [69, 67, 65, 64, 62, 60]]
+    failed += run_screen_test("排查：6 键和弦 + 旋律（无发现）", lyre, play_sequence(ev), set())
+    # ---- 精确等间隔（脚本式）40 个音 → 机械等间隔；同样的音加上人手的随机偏差 → 无发现
+    ev = [([67, 72, 71, 72][i % 4], 0.2) for i in range(40)]
+    failed += run_screen_test("排查：40 个音精确等间隔", lyre, play_sequence(ev), {"regular"})
+    ev = [([67, 72, 71, 72][i % 4], 0.2 + float(rng.normal(0, 0.012))) for i in range(40)]
+    failed += run_screen_test("排查：40 个音人手轮指（无发现）", lyre, play_sequence(ev), set())
 
     print("\n" + ("全部通过" if not failed else f"失败 {len(failed)} 项：\n  " + "\n  ".join(failed)))
     sys.exit(1 if failed else 0)
