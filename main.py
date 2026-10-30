@@ -88,7 +88,7 @@ def analyze_file(wav_path, out_path=None, inst_name=None):
     block = 2048
     for i in range(0, len(x), block):
         r = det.feed(x[i:i + block])
-        for f in scr.process(x[i:i + block], det):
+        for f in scr.process(x[i:i + block], det, events=r["note_events"]):
             found[f["id"]] = f
         events.extend(r["note_events"])
         if r["bpm"] is not None:
@@ -98,7 +98,7 @@ def analyze_file(wav_path, out_path=None, inst_name=None):
         tonality = r["tonality"] or tonality
     z = np.zeros(sr, dtype=np.float32)                    # 补 1 s 静音让余音落音
     r = det.feed(z)
-    for f in scr.process(z, det) + scr.process(np.zeros(0, dtype=np.float32), det, final=True):
+    for f in scr.process(z, det, events=r["note_events"]) + scr.process(np.zeros(0, dtype=np.float32), det, final=True):
         found[f["id"]] = f
     events.extend(r["note_events"])
     events.sort(key=lambda e: e["t"])

@@ -31,6 +31,11 @@
    经发声块量化后被误判的概率 < 0.5%。
    速度接近发声块整数倍时（如 64 ms = 3 块）人手误差最不容易显现，需要更长的段，个别速度不做判断。
    若游戏逐帧读取按键，脚本的时序也会被帧打乱，这项会漏报——但不会因此多冤枉人。
+   起音间隔不必都相同：间隔都是同一个单位的整数倍（像 MIDI 量化的节奏，四分 = 2 × 八分）也算，单位不小于 40 ms。
+
+3) 按键时长（只对晚风圆号：圆号松键就停声，按住多久听得出来；诗琴、琴类松键后余音照响，听不出按了多久）
+   最近 ≥16 个"松键/截止"结束的音，按键时长全都落在同一个单位的整数倍上（或全都一样长），
+   误差在 ±13 ms（游戏发声精度）以内 → 疑似机械操作（MIDI 脚本按谱面时值按住；人按住的时长会分散）。
 """
 import math
 import threading
@@ -38,12 +43,14 @@ from collections import deque
 
 import numpy as np
 
+from detection import TIMBRES, timbre_register
+
 Q_BLOCK = 1024 / 48000.0          # 原神发声块（秒）
 
 LEVEL_LIMIT = "limit"
 LEVEL_SUSPECT = "suspect"
 LEVEL_TEXT = {LEVEL_LIMIT: "超出人手极限", LEVEL_SUSPECT: "疑似机械操作"}
-KIND_TEXT = {"keys": "同时按键", "regular": "机械等间隔"}
+KIND_TEXT = {"keys": "同时按键", "regular": "机械节拍", "hold": "按键时长"}
 
 # 谐波相对基频的电平（dB），用于判断一个新峰是不是更低的键的谐波。录音里有足够多单独按下的音后改用实测值
 HARM_PLUCK = {2: -18.0, 3: -22.0, 4: -30.0, 5: -30.0, 6: -29.0, 7: -28.0}   # 实测：风物之诗琴采样
@@ -155,7 +162,7 @@ class KeyCounter:
         return A, pk
 
     def count(self, before, after, harm):
-        """before / after：等长音频；harm：{谐波次数: 相对基频 dB}"""
+        """before / after：等长音频；harm：{音区: {谐波次数: 相对基频 dB}}（音区 low/mid/high，按更低的那个键所在音区取）"""
         A, pk = self._levels(self.spectrum(after))
         B, _ = self._levels(self.spectrum(before))
         LA = 20 * np.log10(A + 1e-12)
@@ -178,7 +185,8 @@ class KeyCounter:
         cand &= LA >= LA[cand].max() + self.REL_DB
         keys = []
         for i in np.nonzero(cand)[0]:                   # 从低到高
-            pred = sum(A[j] * 10 ** (harm[h] / 20.0) for j, h in self.harm_of[i] if j in keys)
+            pred = sum(A[j] * 10 ** (harm[timbre_register(self.midis[j])][h] / 20.0)
+                       for j, h in self.harm_of[i] if j in keys and h in harm[timbre_register(self.midis[j])])
             if pred > 0 and A[i] <= pred * 10 ** (self.HARM_MARGIN_DB / 20.0):
                 continue
             keys.append(i)
@@ -188,7 +196,7 @@ class KeyCounter:
         return [self.midis[i] for i in keys if i not in ghost]
 
     def single_harmonics(self, before, after):
-        """单独按下的一个音 → {谐波次数: 相对基频 dB}（只取起音后新增的能量）；判断不了时返回 None"""
+        """单独按下的一个音 → (MIDI, {谐波次数: 相对基频 dB})（只取起音后新增的能量）；判断不了时返回 None"""
         Sa, Sb = self.spectrum(after), self.spectrum(before)
         A, pk = self._levels(Sa)
         B, _ = self._levels(Sb)
@@ -210,7 +218,7 @@ class KeyCounter:
                 break
             ah = d[int(bh * 2 ** (-0.3 / 12)):int(np.ceil(bh * 2 ** (0.3 / 12))) + 1].max()
             out[h] = 20 * math.log10(max(ah, 1e-12) / a0)
-        return out
+        return self.midis[i], out
 
 
 class Screener:
@@ -237,8 +245,16 @@ class Screener:
     def set_instrument(self, inst):
         self.instrument = inst
         self.count_enabled = inst.name != "悠可琴"
-        self.harm_default = {"风物之诗琴": HARM_PLUCK, "晚风圆号": HARM_HORN}.get(inst.name, HARM_STRONG)
+        base = {"风物之诗琴": HARM_PLUCK, "晚风圆号": HARM_HORN}.get(inst.name, HARM_STRONG)
+        self.harm_default = {r: dict(base) for r in ("low", "mid", "high")}
+        # 实测过音色的乐器（与游戏界面按键逐一对照）直接用实测的分音区谐波电平，不再从录音里学
+        self.harm_fixed = inst.name in TIMBRES
+        if self.harm_fixed:
+            for r, prof in TIMBRES[inst.name].items():
+                self.harm_default[r] = {h: v for h, v in prof.items() if h in HARMS}
         self.counter = KeyCounter(inst.valid_midis(), self.sr)
+        # 谐波强的乐器（如谐律键琴）实测计数偏多 1~3 个：门限相应提高 2 个，宁可漏报也不冤枉人
+        self.count_extra = 2 if self.harm_fixed else 0
 
     def reset(self):
         with self._lock:
@@ -254,22 +270,80 @@ class Screener:
             self._reg_skipped = False
             self._reg_find = None
             self.findings = []
+            self._holds = []              # [(起音时刻, 按键时长 s)]：圆号"松键/截止"结束的音
+            self._hold_find = None
             self.max_keys = 0
             self.max_keys_t = None
             self.longest_regular = (0, None, None)     # (音数, 周期 s, 起始时刻)
             self.burst_log = deque(maxlen=400)          # [(时刻, 估计键数, [MIDI])]：每次做过计数的按下（调试/评测）
-            self._harm_obs = {h: deque(maxlen=40) for h in HARMS}   # 单独按下的音实测的谐波电平
+            self._harm_obs = {r: {h: deque(maxlen=40) for h in HARMS} for r in ("low", "mid", "high")}   # 单独按下的音实测的谐波电平
             self._next_id = 1
 
     # ------------------------------------------------------------------
-    def process(self, block, det, final=False):
-        """喂入与 det 相同的音频块；返回本次新增或更新的发现（dict 列表，同一发现 id 不变）"""
+    def process(self, block, det, final=False, events=None):
+        """喂入与 det 相同的音频块（events = 这一块 det.feed 返回的音符事件）；
+        返回本次新增或更新的发现（dict 列表，同一发现 id 不变）"""
         with self._lock:
             self._append(np.asarray(block, dtype=np.float32).reshape(-1))
             now = det._now()
             out = self._scan_bursts(det, now, final)
             out += self._scan_regular(det, now, final)
+            if events:
+                out += self._scan_holds(events)
             return out
+
+    # ------------------------------------------------------------------ 按键时长（圆号）
+    HOLD_N = 16
+    HOLD_W = 1.2                  # 带宽（发声块）：起止都对齐到块上，同一时值的脚本时长最多差 1 块
+    HOLD_MIN_UNIT = 4.0           # 单位至少 4 块（85 ms），太细的单位什么都能"解释"
+
+    def _scan_holds(self, events):
+        if self.instrument.name != "晚风圆号":
+            return []
+        for e in events:
+            if e.get("end") == "release" and e.get("dur_ms"):
+                self._holds.append((e["t"], e["dur_ms"] / 1000.0))
+        self._holds = self._holds[-64:]
+        hs = [h for h in self._holds if h[0] >= self._holds[-1][0] - 60.0] if self._holds else []
+        if len(hs) < self.HOLD_N:
+            return []
+        d = np.array([h[1] for h in hs[-32:]]) / Q_BLOCK
+        fit = self._hold_lattice(d)
+        if fit is None:
+            self._hold_find = None
+            return []
+        unit, c, width, distinct = fit
+        f = self._hold_find
+        if f is None:
+            f = {"id": self._new_id(), "kind": "hold", "level": LEVEL_SUSPECT, "t": hs[-len(d)][0]}
+            self._hold_find = f
+            self.findings.append(f)
+        tol = 0.5 * width * Q_BLOCK * 1000.0
+        if distinct <= 1:
+            title = f"连续 {len(d)} 个音按住的时长全都一样（约 {np.median(d) * Q_BLOCK * 1000:.0f} ms）"
+        else:
+            title = f"连续 {len(d)} 个音的按键时长全是 {unit * Q_BLOCK * 1000:.0f} ms 的整数倍"
+        f.update({"t_end": hs[-1][0], "n": len(d), "title": title,
+                  "text": f"{title}，误差都在 ±{max(tol, 1):.0f} ms 以内（游戏发声精度）。MIDI 脚本按谱面时值按住，"
+                          f"时长只会是少数几个值；人按住的时长会分散几十毫秒。只对圆号有效（松键即停声）"})
+        return [f]
+
+    def _hold_lattice(self, d):
+        """时长（单位：发声块）是否全落在 c + g·unit（g ≥ 1 整数）附近、带宽 ≤ HOLD_W。
+        → (unit, c, 带宽, 不同的 g 个数) 或 None。先看是不是全一样长（g 全为 1）"""
+        if d.max() - d.min() <= self.HOLD_W:
+            return float(np.median(d)), 0.0, float(d.max() - d.min()), 1
+        best = None
+        for unit in np.arange(self.HOLD_MIN_UNIT, max(self.HOLD_MIN_UNIT + 0.1, d.max() / 1.5), 0.1):
+            cs = np.arange(-unit / 2.0, unit / 2.0, 0.25)
+            g = np.round((d[None, :] - cs[:, None]) / unit)
+            res = d[None, :] - cs[:, None] - g * unit
+            w = res.max(axis=1) - res.min(axis=1)
+            ok = (w <= self.HOLD_W) & (g.min(axis=1) >= 1)
+            if ok.any():
+                j = int(np.argmin(np.where(ok, w, np.inf)))
+                best = (float(unit), float(cs[j]), float(w[j]), len(set(g[j].astype(int).tolist())))
+        return best
 
     def _append(self, x):
         self._buf = np.concatenate([self._buf, x])
@@ -298,40 +372,47 @@ class Screener:
             return []
         cutoff = now - (0.36 if final else self.SETTLE)
         new = []
+        fb_ids = getattr(det, "fb_onset_ids", ())
         for e in reversed(det.onsets):
             if e[0] <= self._burst_t:
                 break
-            if e[0] <= cutoff:
-                new.append((e[0], e[2]))
+            if e[0] <= cutoff and id(e) not in fb_ids:
+                # 只由检测器后备判定开出的起音不参与（快段落里它的起音时刻不如正式起音准，会把一次按下拆开）
+                new.append((e[0], e[2], False))
         if not new:
             return []
         new.sort()
         bursts = []
-        for t, c in new:
+        for t, c, fb in new:
             if bursts and t - bursts[-1][1] <= self.BURST_GAP and t - bursts[-1][0] <= self.BURST_SPAN:
                 bursts[-1][1] = t
                 bursts[-1][2] += c
+                bursts[-1][3] = bursts[-1][3] and fb
             else:
-                bursts.append([t, t, c])
+                bursts.append([t, t, c, fb])
         if not final and cutoff - bursts[-1][1] < self.BURST_GAP + 0.005:
             bursts.pop()                        # 可能还没收齐，下次再处理
         out = []
-        for t0, t1, c in bursts:
+        for t0, t1, c, fb in bursts:
             self._burst_t = t1
             if c >= self.MIN_DET_NOTES:
                 f = self._count_burst(det, t0, t1)
                 if f is not None:
                     out.append(f)
-            elif c == 1:
+            elif c == 1 and not fb:
                 self._learn_single(det, t0, t1)
         return out
 
     def harm_profile(self):
-        """当前用于"谐波解释"的各次谐波电平：每次谐波攒够 6 个单独按下的音后用实测中位数（不低于 -45 dB）"""
-        prof = dict(self.harm_default)
-        for h, obs in self._harm_obs.items():
-            if len(obs) >= 6:
-                prof[h] = float(min(-3.0, max(-45.0, np.median(obs))))
+        """当前用于"谐波解释"的分音区各次谐波电平：每个音区每次谐波攒够 6 个单独按下的音后用实测中位数
+        （-45 ~ -3 dB）；实测过音色的乐器直接用实测值"""
+        prof = {r: dict(v) for r, v in self.harm_default.items()}
+        if self.harm_fixed:
+            return prof
+        for r, hs in self._harm_obs.items():
+            for h, obs in hs.items():
+                if len(obs) >= 6:
+                    prof[r][h] = float(min(-3.0, max(-45.0, np.median(obs))))
         return prof
 
     def _learn_single(self, det, t0, t1):
@@ -339,15 +420,17 @@ class Screener:
         if win is None:
             return
         before, after, _ = win
-        hs = self.counter.single_harmonics(before, after)
-        if hs:
+        res = self.counter.single_harmonics(before, after)
+        if res:
+            midi, hs = res
             for h, v in hs.items():
-                self._harm_obs[h].append(v)
+                self._harm_obs[timbre_register(midi)][h].append(v)
 
     def _windows(self, det, t0, t1):
         """这次按下前后等长的两段音频 (before, after, 按下的末尾时刻)；后面紧跟着下一个音、窗太短时返回 None"""
         # 这次按下的末尾：并入 45 ms 内的细分辨率起音峰；下一个起音（检测器起音或起音峰）之前截止
-        peaks = sorted([p[0] for p in det._of_peaks] + [e[0] for e in det.onsets[-24:]])
+        fb_ids = getattr(det, "fb_onset_ids", ())
+        peaks = sorted([p[0] for p in det._of_peaks] + [e[0] for e in det.onsets[-24:] if id(e) not in fb_ids])
         end = t1
         for p in peaks:
             if t0 - 0.01 <= p <= end + self.BURST_GAP and p - t0 <= self.BURST_SPAN:
@@ -374,18 +457,19 @@ class Screener:
         self.burst_log.append((t0, n, keys, len(after)))
         if n > self.max_keys:
             self.max_keys, self.max_keys_t = n, t0
-        if n <= self.MAX_FINGERS or (not reliable and n < self.MAX_FINGERS + 2):
+        n_eff = n - self.count_extra
+        if n_eff <= self.MAX_FINGERS or (not reliable and n_eff < self.MAX_FINGERS + 2):
             return None
         labels = [self.instrument.label_of(m)[0] for m in keys]
         # 长窗计数误差约 ±1：估计 11 个可能其实是 10 个 → 只算"疑似"；≥12 个才算超出人手极限。
         # 短窗（后面紧跟着别的音）误差更大：最多算"疑似"
-        sure = reliable and n >= self.MAX_FINGERS + 2
+        sure = reliable and n_eff >= self.MAX_FINGERS + 2
         f = {"id": self._new_id(), "kind": "keys", "level": LEVEL_LIMIT if sure else LEVEL_SUSPECT,
              "t": t0, "t_end": end, "n": n, "keys": labels,
              "title": f"同时按下约 {n} 个键",
              "text": (f"同时按下约 {n} 个键（{' '.join(labels)}），超过人的 10 根手指"
                       if sure else f"同时按下约 {n} 个键（{' '.join(labels)}），可能超过 10 根手指"
-                                   f"（计数误差约 ±{1 if reliable else 2} 个）")
+                                   f"（计数误差约 ±{(1 if reliable else 2) + self.count_extra} 个）")
                      + "；电脑键盘上一根手指能压住两个相邻键，属强证据而非铁证"}
         self.findings.append(f)
         return f
@@ -438,7 +522,20 @@ class Screener:
             p_hat = k[-1] - k[-2]
         r = (k[-1] - k[-2]) / max(p_hat, 1e-9)
         m = int(round(r))
-        if m < 1 or m > 4 or abs(r - m) > 0.35:
+        unit_min = self.REG_MIN_P / (Q_BLOCK if self._reg_grid else self.RAW_Q)
+        if (m < 1 or abs(r - m) > 0.3) and len(run) >= 3:
+            # 节奏型（MIDI 量化）：这个间隔是当前单位的 1/2、1/3、1/4 的整数倍 → 单位细分，已有拍号同比例放大
+            for d in (2, 3, 4):
+                r2, m2 = r * d, int(round(r * d))
+                if m2 >= 1 and abs(r2 - m2) <= 0.3 and p_hat / d >= unit_min:
+                    for e in run:
+                        e[1] *= d
+                    xs = [e[1] for e in run]
+                    p_hat /= d
+                    self._reg_slope = p_hat
+                    r, m = r2, m2
+                    break
+        if m < 1 or m > 8 or abs(r - m) > 0.3:
             if len(run) >= 8 and not self._reg_skipped:
                 self._reg_skipped = True              # 一个不在拍上的起音（多检的）：先跳过，看下一个
                 return False, None
@@ -514,11 +611,19 @@ class Screener:
         cnt = f["n"]
         dur = t - f["t"]
         tol_ms = 0.5 * w * unit * 1000.0
-        f.update({"t_end": t, "period_ms": period * 1000.0,
-                  "title": f"连续 {cnt} 个音间隔完全一致",
-                  "text": f"约 {period * 1000:.0f} ms 一个音、持续 {dur:.1f} 秒，全部落在完美等间隔 ±{max(tol_ms, 1):.0f} ms 以内"
-                          f"（游戏发声精度）；很稳的人连续这么多音也会偏出（按计时模型模拟，误判概率 < 0.5%），"
-                          f"可能是脚本，也可能是极稳的人，需结合其它证据"})
+        steps = sorted({b[1] - a[1] for a, b in zip(run, run[1:])})
+        rhythm = len(steps) > 1 or (steps and steps[0] > 1)
+        if rhythm:
+            title = f"连续 {cnt} 个音的间隔全是 {period * 1000:.0f} ms 的整数倍"
+            what = (f"间隔是约 {period * 1000:.0f} ms 的 {'、'.join(str(x) for x in steps[:6])} 倍（像 MIDI 量化的节奏）、"
+                    f"持续 {dur:.1f} 秒，每个音都落在这个节拍网格 ±{max(tol_ms, 1):.0f} ms 以内（游戏发声精度）")
+        else:
+            title = f"连续 {cnt} 个音间隔完全一致"
+            what = (f"约 {period * 1000:.0f} ms 一个音、持续 {dur:.1f} 秒，全部落在完美等间隔 ±{max(tol_ms, 1):.0f} ms 以内"
+                    f"（游戏发声精度）")
+        f.update({"t_end": t, "period_ms": period * 1000.0, "rhythm": rhythm, "title": title,
+                  "text": what + "；很稳的人连续这么多音也会偏出（按计时模型模拟，误判概率 < 0.5%），"
+                                 "可能是脚本，也可能是极稳的人，需结合其它证据"})
         out.append(f)
         return out
 
@@ -538,5 +643,5 @@ class Screener:
             extra.append(f"最多同时按下约 {self.max_keys} 个键" if self.max_keys else "没有 3 个键以上的同时按下")
         n, p, _ = self.longest_regular
         if n >= 8 and p:
-            extra.append(f"最长的等间隔连续音 {n} 个（约 {p * 1000:.0f} ms 一个）")
+            extra.append(f"最长的同一节拍网格上的连续音 {n} 个（单位约 {p * 1000:.0f} ms）")
         return "；".join(parts + extra)

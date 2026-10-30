@@ -30,13 +30,13 @@ def run(audio, inst):
     blk = 2048
     for i in range(0, len(audio) - blk + 1, blk):
         b = audio[i:i + blk]
-        det.feed(b)
-        for f in scr.process(b, det):
+        r = det.feed(b)
+        for f in scr.process(b, det, events=r["note_events"]):
             found[f["id"]] = f
     z = np.zeros(blk, dtype=np.float32)
     for _ in range(int(1.0 * SR / blk)):
-        det.feed(z)
-        for f in scr.process(z, det):
+        r = det.feed(z)
+        for f in scr.process(z, det, events=r["note_events"]):
             found[f["id"]] = f
     for f in scr.process(z, det, final=True):
         found[f["id"]] = f

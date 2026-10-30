@@ -116,8 +116,8 @@ def run_screen_test(name, inst, audio, expect):
     audio = np.concatenate([audio, np.zeros(SR, dtype=np.float32)])
     for i in range(0, len(audio) - blk + 1, blk):
         x = audio[i:i + blk]
-        det.feed(x)
-        for f in scr.process(x, det):
+        r = det.feed(x)
+        for f in scr.process(x, det, events=r["note_events"]):
             found[f["id"]] = f
     for f in scr.process(np.zeros(0, dtype=np.float32), det, final=True):
         found[f["id"]] = f

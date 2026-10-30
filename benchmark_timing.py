@@ -226,11 +226,11 @@ CASES = [
     ("lyre  同键连按 ×12 余音", seq_repeat(), "lyre", "ring", "lyre", 200.0, True),
     ("lyre  同键连按 ×12 叠加不截断", seq_repeat(), "lyre", "ring", "lyre", 200.0, False),
     ("lyre  松键止音 小星星", seq_twinkle(hold=0.3), "lyre", "damp", "lyre", 120.0, True),
-    ("lyre  脚本谱 score_seq (和弦+连按)", seq_score(), "lyre", "ring", "lyre", 60 / 0.308, True),
+    ("lyre  脚本谱 score_seq (和弦+连按，一拍 = 2 个单位)", seq_score(), "lyre", "ring", "lyre", 60 / 0.616, True),
     ("lyre  人手演奏 (抖动±12ms)", seq_human(), "lyre", "ring", "lyre", 60 / 0.42, True),
     ("lyre  变速 100→140", seq_tempo_change(), "lyre", "ring", "lyre", 140.0, True),
     # BPM 口径：起音周期（最常见的规则起音间隔单位），与原版及 test_detection.py 的期望一致
-    ("lyre  四分+八分混合 (周期 0.3s)", seq_mixed(), "lyre", "ring", "lyre", 200.0, True),
+    ("lyre  四分+八分混合 (八分 0.3s，一拍 = 四分 0.6s)", seq_mixed(), "lyre", "ring", "lyre", 100.0, True),
     ("horn  圆号 按住时长各异", seq_horn(), "horn", "ring", "horn", 80.0, True),
 ]
 
@@ -500,9 +500,15 @@ TEMPO_CASES = [
 ]
 
 
+def _metric_ok(v, note_bpm, tol=0.05):
+    """拍子级读数是否对：等于音符速度的 1、1/2、1/3、1/4（一拍 1~4 个音）之一，误差 ±5%"""
+    return any(abs(v / (note_bpm / m) - 1.0) <= tol for m in (1, 2, 3, 4))
+
+
 def main_tempo(impls):
     """BPM 跟随变速的速度：每段从开始到读数进入并保持在真值 ±5% 内的时间（"跟上"），
-    以及允许 1 s 固有延迟时读数在 ±5% 内的时间占比；稳定速度用例看读数是否乱跳"""
+    以及允许 1 s 固有延迟时读数在 ±5% 内的时间占比；稳定速度用例看读数是否乱跳。
+    BPM 是拍子级的：读数等于音符速度的 1、1/2、1/3、1/4（一拍 1~4 个音）都算对"""
     lyre = build_lyre21("风物之诗琴")
     for name, segments in TEMPO_CASES:
         notes, segs = seq_segments(segments)
@@ -518,14 +524,14 @@ def main_tempo(impls):
                 ts = [(t, v) for t, v in bpms if a <= t < b]
                 st = None
                 for k, (t, v) in enumerate(ts):
-                    if all(vv is not None and abs(vv / bpm - 1) <= 0.05 for _, vv in ts[k:]):
+                    if all(vv is not None and _metric_ok(vv, bpm) for _, vv in ts[k:]):
                         st = t - a
                         break
                 settle.append(st)
                 for t, v in bpms:
                     if a <= t - 1.0 < b:
                         n_all += 1
-                        within += int(v is not None and abs(v / bpm - 1) <= 0.05)
+                        within += int(v is not None and _metric_ok(v, bpm))
             jumps = sum(1 for (_, v0), (_, v1) in zip(bpms, bpms[1:])
                         if v0 is not None and v1 is not None and abs(v1 / v0 - 1) > 0.10)
             rows[iname] = (settle, 100.0 * within / max(1, n_all), jumps)

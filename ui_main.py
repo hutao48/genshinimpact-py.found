@@ -352,7 +352,8 @@ class KeyPanel(QWidget):
                 if kind == "chord":
                     tile = KeyTile(ch, str(extra), "chord", f"和弦键 {ch}：{extra}")
                 else:
-                    tile = KeyTile(ch, midi_to_name(midi), "pitch", f"键 {ch} = {midi_to_name(midi)}")
+                    tile = KeyTile(ch, midi_to_name(midi + inst.transpose), "pitch",
+                                   f"键 {ch} = {midi_to_name(midi + inst.transpose)}")
                 self.grid.addWidget(tile, r, c + 1)
                 self.buttons[ch] = tile
             self.grid.setRowStretch(r, 1)
@@ -837,7 +838,7 @@ class DetectWorker(QThread):
             err_count = 0
             blocks += 1
             res = self.detector.feed(block)
-            for f in self.screener.process(block, self.detector):
+            for f in self.screener.process(block, self.detector, events=res["note_events"]):
                 self.sig_finding.emit(dict(f))
             if blocks % 24 == 0:
                 summ = self.screener.summary()
@@ -1154,8 +1155,9 @@ class MainWindow(QMainWindow):
         self.pill.setProperty("state", state)
         _repolish(self.pill)
 
-    SCREEN_HELP = ("检查两类超出人手极限的操作：① 同时按下超过 10 个键（人只有 10 根手指）；"
-                   "② 很长一段连续音的间隔完全一致（机器级精度）。原神的声音按约 21 ms 一块发出，"
+    SCREEN_HELP = ("检查超出人手极限的操作：① 同时按下超过 10 个键（人只有 10 根手指）；"
+                   "② 很长一段连续音全落在同一节拍网格上（间隔都相同，或都是同一单位的整数倍，像 MIDI 量化）；"
+                   "③ 圆号的按键时长全是同一单位的整数倍。原神的声音按约 21 ms 一块发出，"
                    "短的轮指人手也会显得完全一致，所以只报很长的段。结果是证据而非定论。")
 
     def _set_page(self, i):
@@ -1331,7 +1333,7 @@ class MainWindow(QMainWindow):
             if ch in labels:
                 entry = key_map.get(ch)
                 if entry and entry[2] == "pitch":
-                    names.append(f"{ch}·{midi_to_name(entry[1])}")
+                    names.append(f"{ch}·{midi_to_name(entry[1] + self._current_inst.transpose)}")
                 elif entry:
                     names.append(f"{ch}·{entry[3]}")
         self.lab_notes.setText("  ".join(names) if names else "—")
