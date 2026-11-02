@@ -37,7 +37,7 @@ jobs:
           $found = (Get-Command iscc -ErrorAction SilentlyContinue) -or (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe") -or (Test-Path "$env:ProgramFiles\Inno Setup 6\ISCC.exe")
           if (-not $found) { choco install innosetup --no-progress -y }
 
-      - name: 测试并打包
+      - name: 打包
         shell: pwsh
         run: ./packaging/build_windows.ps1 -Python python
 

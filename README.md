@@ -2,7 +2,7 @@
 
 **Version**: Windows 1.0.4 / Android 1.0.3 | **Website**: [hutao48.github.io/genshinimpact-py.found](https://hutao48.github.io/genshinimpact-py.found/) | **Downloads**: [GitHub Releases](https://github.com/hutao48/genshinimpact-py.found/releases/latest) | [Chinese user guide (中文使用说明)](使用说明.md)
 
-> The application starts in Simplified Chinese on Chinese systems and English on other systems. You can switch between **简体中文 / 繁體中文 / 正體中文（臺灣）/ English / 日本語** in **Settings**.
+> The application starts in Simplified Chinese on Simplified Chinese systems, Traditional Chinese on Traditional Chinese systems, and English elsewhere. You can switch between **简体中文 / 繁體中文 / 正體中文（臺灣）/ English / 日本語** in **Settings**.
 
 ## Downloads
 
