@@ -12,6 +12,7 @@ DEFAULTS = {
     "language": "",          # 空 = 首次启动时跟随系统
     "theme": "system",       # system / dark / light
     "check_updates": "0",    # 默认不联网；用户在设置中显式开启后启动时才检查
+    "auto_update": "0",      # 发现新版本后是否自动下载并安装
 }
 
 VALID_THEMES = {"system", "dark", "light"}
@@ -43,6 +44,8 @@ def load() -> dict:
         data["theme"] = "system"
     if data.get("check_updates") not in ("0", "1"):
         data["check_updates"] = "0"
+    if data.get("auto_update") not in ("0", "1"):
+        data["auto_update"] = "0"
     return data
 
 

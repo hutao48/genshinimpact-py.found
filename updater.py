@@ -9,10 +9,13 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import re
+import tempfile
 
-from PySide6.QtCore import QObject, QTimer, QUrl, Signal, QByteArray
+from PySide6.QtCore import QObject, QTimer, QUrl, Signal, QByteArray, QFile, QIODevice
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 
 from app_version import APP_REPO, APP_VERSION
@@ -20,7 +23,11 @@ from app_version import APP_REPO, APP_VERSION
 API_URL = f"https://api.github.com/repos/{APP_REPO}/releases/latest"
 RELEASE_PREFIX = f"https://github.com/{APP_REPO}/releases/"
 MAX_BODY = 512 * 1024
+MAX_ASSET = 200 * 1024 * 1024
 TIMEOUT_MS = 12000
+ASSET_TIMEOUT_MS = 10 * 60 * 1000
+ASSET_HOSTS = {"github.com", "release-assets.githubusercontent.com",
+               "objects.githubusercontent.com"}
 
 
 def _parse_version(text: str):
@@ -37,6 +44,15 @@ def valid_release_url(url: str) -> bool:
             and not q.userInfo()
             and q.port() in (-1, 443)
             and q.path().startswith(f"/{APP_REPO}/releases/"))
+
+
+def valid_asset_url(url: str) -> bool:
+    q = QUrl(url)
+    return (q.isValid() and q.scheme().lower() == "https"
+            and q.host().lower() == "github.com"
+            and not q.userInfo()
+            and q.port() in (-1, 443)
+            and q.path().startswith(f"/{APP_REPO}/releases/download/"))
 
 
 class UpdateChecker(QObject):
@@ -164,6 +180,22 @@ class UpdateChecker(QObject):
         if not valid_release_url(url):
             url = f"{RELEASE_PREFIX}latest"
         notes = str(info.get("body") or "")[:8000]
+        assets = []
+        for a in info.get("assets") or []:
+            if not isinstance(a, dict):
+                continue
+            name = str(a.get("name") or "")
+            asset_url = str(a.get("browser_download_url") or "")
+            if not name or not valid_asset_url(asset_url):
+                continue
+            try:
+                size = int(a.get("size") or 0)
+            except (TypeError, ValueError):
+                size = 0
+            digest = str(a.get("digest") or "")
+            sha = digest.split(":", 1)[1].lower() if digest.lower().startswith("sha256:") else ""
+            assets.append({"name": name, "url": asset_url, "size": size,
+                           "sha256": sha if re.fullmatch(r"[0-9a-f]{64}", sha) else ""})
         payload = {
             "ok": True,
             "update": latest > current,
@@ -172,5 +204,167 @@ class UpdateChecker(QObject):
             "url": url,
             "notes": notes,
             "published": str(info.get("published_at") or ""),
+            "assets": assets,
         }
         self._finish(payload)
+
+
+class UpdateDownloader(QObject):
+    """下载更新安装包：HTTPS + 大小上限 + SHA-256 校验 + PE 头检查。
+
+    仅用于用户开启自动更新或手动确认后的安装包下载；下载成功后仍由界面决定是否执行。
+    """
+
+    progress = Signal(int)
+    done = Signal(str)
+    failed = Signal(str)
+
+    def __init__(self, url: str, expected_sha256: str, expected_size: int = 0, parent=None):
+        super().__init__(parent)
+        self.url = url
+        self.expected_sha256 = (expected_sha256 or "").lower()
+        self.expected_size = int(expected_size or 0)
+        self._nam = QNetworkAccessManager(self)
+        self._reply = None
+        self._file = None
+        self._path = ""
+        self._bytes = 0
+        self._emitted = False
+        self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.timeout.connect(self._on_timeout)
+
+    def start(self):
+        if self._reply is not None:
+            return
+        if not valid_asset_url(self.url) or not re.fullmatch(r"[0-9a-f]{64}", self.expected_sha256):
+            self._fail("invalid")
+            return
+        fd, self._path = tempfile.mkstemp(prefix="GID-update-", suffix=".exe")
+        os.close(fd)
+        self._file = QFile(self._path)
+        if not self._file.open(QIODevice.OpenModeFlag.WriteOnly):
+            self._fail("io")
+            return
+        req = QNetworkRequest(QUrl(self.url))
+        req.setHeader(QNetworkRequest.KnownHeaders.UserAgentHeader,
+                      f"GenshinInstrumentDetector/{APP_VERSION}")
+        req.setAttribute(QNetworkRequest.Attribute.RedirectPolicyAttribute,
+                         QNetworkRequest.RedirectPolicy.NoLessSafeRedirectPolicy)
+        try:
+            req.setTransferTimeout(ASSET_TIMEOUT_MS)
+        except AttributeError:
+            pass
+        self._timer.start(ASSET_TIMEOUT_MS)
+        self._reply = self._nam.get(req)
+        self._reply.setReadBufferSize(256 * 1024)
+        self._reply.readyRead.connect(self._read)
+        self._reply.finished.connect(self._finished)
+
+    def cancel(self):
+        self._emitted = True
+        reply, self._reply = self._reply, None
+        if reply is not None:
+            reply.abort()
+            reply.deleteLater()
+        self._cleanup(remove=True)
+
+    def _cleanup(self, remove: bool):
+        self._timer.stop()
+        if self._file is not None:
+            self._file.close()
+            self._file = None
+        if remove and self._path:
+            try:
+                os.remove(self._path)
+            except OSError:
+                pass
+            self._path = ""
+
+    def _fail(self, error: str):
+        if self._emitted:
+            return
+        self._emitted = True
+        reply, self._reply = self._reply, None
+        if reply is not None:
+            reply.deleteLater()
+        self._cleanup(remove=True)
+        self.failed.emit(error)
+
+    def _on_timeout(self):
+        if self._reply is not None:
+            self._reply.abort()
+        self._fail("timeout")
+
+    def _read(self):
+        reply = self._reply
+        if reply is None or self._emitted:
+            return
+        chunk = reply.read(256 * 1024)
+        if not chunk:
+            return
+        self._bytes += chunk.size()
+        if self._bytes > MAX_ASSET:
+            self._reply.abort()
+            self._fail("too_large")
+            return
+        if self._file is None or self._file.write(chunk) != chunk.size():
+            self._reply.abort()
+            self._fail("io")
+            return
+        if self.expected_size > 0:
+            self.progress.emit(min(99, int(self._bytes * 100 / self.expected_size)))
+
+    def _finished(self):
+        reply = self._reply
+        if reply is None or self._emitted:
+            return
+        if reply.error() != QNetworkReply.NetworkError.NoError:
+            self._fail("network")
+            return
+        status = reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute)
+        if status != 200:
+            self._fail("http")
+            return
+        u = reply.url()
+        if u.scheme().lower() != "https" or u.host().lower() not in ASSET_HOSTS:
+            self._fail("network")
+            return
+        try:
+            length = int(reply.header(QNetworkRequest.KnownHeaders.ContentLengthHeader) or 0)
+        except (TypeError, ValueError):
+            length = 0
+        if length > MAX_ASSET:
+            self._fail("too_large")
+            return
+        # 读完剩余缓冲（readyRead 可能还没消费完）
+        rest = reply.readAll()
+        if rest.size():
+            self._bytes += rest.size()
+            if self._bytes > MAX_ASSET or self._file is None or self._file.write(rest) != rest.size():
+                self._fail("too_large" if self._bytes > MAX_ASSET else "io")
+                return
+        self._cleanup(remove=False)
+        path = self._path
+        try:
+            if self.expected_size and os.path.getsize(path) != self.expected_size:
+                self._fail("size")
+                return
+            h = hashlib.sha256()
+            with open(path, "rb") as f:
+                for block in iter(lambda: f.read(1024 * 1024), b""):
+                    h.update(block)
+            if h.hexdigest() != self.expected_sha256:
+                self._fail("checksum")
+                return
+            with open(path, "rb") as f:
+                if f.read(2) != b"MZ":
+                    self._fail("format")
+                    return
+        except OSError:
+            self._fail("io")
+            return
+        self._emitted = True
+        self._path = ""
+        self.progress.emit(100)
+        self.done.emit(path)

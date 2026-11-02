@@ -65,17 +65,17 @@ jobs:
         with:
           gradle-version: "8.7"
 
-      - name: 准备发布签名（可选）
+      - name: 准备发布签名
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
-          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
-            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
-            echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
-            echo "使用仓库 Secrets 中的正式密钥签名"
-          else
-            echo "未配置签名 Secrets：使用调试密钥签名"
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 is required; refusing to build a debug-signed release."
+            exit 1
           fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+          echo "使用仓库 Secrets 中的固定发布密钥签名"
 
       - name: 构建 APK
         working-directory: android_app

@@ -13,7 +13,7 @@ import os
 import sys
 import time
 
-from PySide6.QtCore import Qt, QThread, Signal, QTimer, QAbstractTableModel, QModelIndex, QRectF, QSize, QUrl, QProcess
+from PySide6.QtCore import Qt, QThread, Signal, QTimer, QAbstractTableModel, QModelIndex, QRectF, QSize, QUrl, QProcess, QPointF
 from PySide6.QtGui import (
     QColor, QFont, QFontDatabase, QFontMetrics, QIcon, QPainter, QPen, QBrush,
     QLinearGradient, QDesktopServices, QPixmap,
@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QLabel, QPushButton, QComboBox, QSpinBox, QSlider, QTableView, QHeaderView,
     QFrame, QSplitter, QMessageBox, QSizePolicy, QButtonGroup, QFileDialog,
     QAbstractItemView, QStackedWidget, QDialog, QGroupBox, QCheckBox,
+    QProgressDialog,
 )
 
 import pyqtgraph as pg
@@ -30,8 +31,8 @@ import pyqtgraph as pg
 import settings
 import i18n
 from i18n import T
-from updater import UpdateChecker, valid_release_url
-from instruments import all_instruments, midi_to_name
+from updater import UpdateChecker, UpdateDownloader, valid_release_url
+from instruments import all_instruments, midi_to_name, midi_to_solfege, DIATONIC_OFFSETS
 from detection import NoteDetector, end_reason_text
 from screening import (
     Screener, LEVEL_LIMIT, LEVEL_SUSPECT, level_text, kind_text,
@@ -89,6 +90,7 @@ PALETTES = {
 }
 C = dict(PALETTES["dark"])
 THEME_MODE = "system"
+THEME_EFFECTIVE = "dark"
 _APP = None
 UI_FONT = "Microsoft YaHei UI"      # apply_theme() 里按系统已安装字体确定
 NUM_FONT = "Segoe UI"               # 数字字体：优先 Bahnschrift（Windows 10+ 自带）
@@ -230,10 +232,11 @@ def effective_theme(mode=None):
 
 def apply_theme(app, mode="system"):
     """字体 + 样式表（需在 QApplication 创建之后调用）。C 原地更新，绘制代码无需重新绑定。"""
-    global UI_FONT, NUM_FONT, THEME_MODE, _APP
+    global UI_FONT, NUM_FONT, THEME_MODE, THEME_EFFECTIVE, _APP
     _APP = app
     THEME_MODE = mode if mode in ("system", "dark", "light") else "system"
     eff = effective_theme(THEME_MODE)
+    THEME_EFFECTIVE = eff
     C.clear()
     C.update(PALETTES[eff])
     UI_FONT = _pick_font(_fonts_for_language())
@@ -385,20 +388,106 @@ class MetricTile(QFrame):
 
 
 # ================================================================ 键位面板
-class KeyTile(QWidget):
-    """单个琴键：自绘圆角方块（大号键位字母 + 小号音名），发音时金色/绿色高亮"""
+KEY_STYLES = {
+    "风物之诗琴": {"accent": "#4fd1c5", "accent2": "#1f9d91", "chord": "#2f9d8f",
+                   "dark": ("#082d3d", "#0f4659"), "light": ("#dceff4", "#c3e2ec")},
+    "镜花之琴": {"accent": "#c08a52", "accent2": "#8f5c32", "chord": "#a86f3c",
+                 "dark": ("#102b40", "#163d55"), "light": ("#f3e6d5", "#e6d1b8")},
+    "跃律琴": {"accent": "#45bdd4", "accent2": "#218fa8", "chord": "#2a9fb5",
+               "dark": ("#0a2c44", "#11465f"), "light": ("#d8eef8", "#bcdff0")},
+    "谐律键琴": {"accent": "#d6ad55", "accent2": "#a87a2e", "chord": "#b5863a",
+                 "dark": ("#112b44", "#1a405f"), "light": ("#f5ecd5", "#e8d6ae")},
+    "晚风圆号": {"accent": "#e0a34a", "accent2": "#b87624", "chord": "#c07d2e",
+                 "dark": ("#14283f", "#203c58"), "light": ("#f6e6d3", "#e9cfae")},
+    "悠可琴": {"accent": "#5b8fe0", "accent2": "#3566b8", "chord": "#2f5fa8",
+               "dark": ("#10264a", "#183c68"), "light": ("#dce9fb", "#c2d8f5")},
+}
+KEY_STYLE_DEFAULT = KEY_STYLES["风物之诗琴"]
 
-    def __init__(self, letter, sub, role, tip, parent=None):
+
+def _key_style(instrument_name: str) -> dict:
+    return KEY_STYLES.get(instrument_name, KEY_STYLE_DEFAULT)
+
+
+def _draw_note_glyph(p: QPainter, cx: float, cy: float, r: float, degree: int, color: QColor):
+    """画一个示意性的音级符号：圆环 + 位置不同的短横/竖线（do–ti 各不相同）。"""
+    pen = QPen(color, max(1.2, r * 0.22))
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    p.setPen(pen)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawEllipse(QRectF(cx - r * 0.72, cy - r * 0.72, r * 1.44, r * 1.44))
+    a = r * 0.92
+    b = r * 0.42
+    shapes = {
+        0: [(cx - a, cy, cx + a, cy)],
+        1: [(cx - a, cy + b, cx + a, cy + b)],
+        2: [(cx - a, cy - b, cx + a, cy - b)],
+        3: [(cx, cy - a, cx, cy + a)],
+        4: [(cx - a, cy - b * 0.45, cx + a, cy - b * 0.45),
+            (cx - a, cy + b * 0.45, cx + a, cy + b * 0.45)],
+        5: [(cx - a, cy + b, cx + a, cy + b), (cx, cy - b, cx, cy + b)],
+        6: [(cx - a, cy - b * 0.62, cx + a, cy - b * 0.62),
+            (cx - a, cy, cx + a, cy),
+            (cx - a, cy + b * 0.62, cx + a, cy + b * 0.62)],
+    }
+    for x1, y1, x2, y2 in shapes.get(degree % 7, shapes[0]):
+        p.drawLine(QPointF(x1, y1), QPointF(x2, y2))
+
+
+class RowIcon(QWidget):
+    """行首图标：高音/中音/低音谱号，或悠可琴的和弦指板。"""
+
+    CLEFS = {"treble": "\U0001D11E", "alto": "\U0001D121", "bass": "\U0001D122"}
+
+    def __init__(self, role, style, label, parent=None):
         super().__init__(parent)
-        self.letter, self.sub, self.role = letter, sub, role
+        self.role, self.style = role, style
+        self.setFixedWidth(46)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
+        self.setToolTip(label)
+
+    def paintEvent(self, e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        accent = QColor(self.style["accent2"] if THEME_EFFECTIVE == "light" else self.style["accent"])
+        if self.role == "chord":
+            w, h = 20, 30
+            x, y = (self.width() - w) / 2, (self.height() - h) / 2
+            p.setPen(QPen(accent, 1.2))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRoundedRect(QRectF(x, y, w, h), 3, 3)
+            for i in (1, 2, 3):
+                p.drawLine(QPointF(x + w * i / 4, y), QPointF(x + w * i / 4, y + h))
+            for i in (1, 2, 3):
+                p.drawLine(QPointF(x, y + h * i / 4), QPointF(x + w, y + h * i / 4))
+            p.setBrush(accent)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawEllipse(QPointF(x + w * 0.25, y + h * 0.5), 1.7, 1.7)
+            p.drawEllipse(QPointF(x + w * 0.75, y + h * 0.25), 1.7, 1.7)
+        else:
+            f = QFont("Segoe UI Symbol")
+            f.setPixelSize(max(16, min(34, int(self.height() * 0.58))))
+            p.setFont(f)
+            p.setPen(accent)
+            p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self.CLEFS[self.role])
+        p.end()
+
+
+class KeyTile(QWidget):
+    """单个琴键：奶油色圆盘 + 音级符号 + 唱名 + 小号键位字母；发音时按乐器主色高亮。"""
+
+    def __init__(self, letter, role, style, tip="", solfege="", chord="", note="", degree=0, parent=None):
+        super().__init__(parent)
+        self.letter, self.role, self.style = letter, role, style
+        self.solfege, self.chord, self.note, self.degree = solfege, chord, note, degree
         self.active = False
         self.setToolTip(tip)
-        self.setMinimumSize(42, 34)
-        self.setMaximumSize(132, 92)
+        self.setMinimumSize(36, 36)
+        self.setMaximumSize(140, 140)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
     def sizeHint(self):
-        return QSize(68, 56)
+        return QSize(76, 76)
 
     def set_active(self, a):
         if a != self.active:
@@ -408,95 +497,190 @@ class KeyTile(QWidget):
     def paintEvent(self, e):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        r = QRectF(self.rect()).adjusted(3, 3, -3, -3)
-        rad = min(12.0, r.height() * 0.22)
-        chord = self.role == "chord"
+        side = min(self.width(), self.height()) - 6
+        if side < 18:
+            p.end()
+            return
+        cx, cy = self.width() / 2.0, self.height() / 2.0
+        r = side / 2.0
+        accent = QColor(self.style["accent"])
+        accent2 = QColor(self.style["accent2"])
+        chord_color = QColor(self.style.get("chord", accent2))
+        cream = QColor("#f8f1db") if THEME_EFFECTIVE == "dark" else QColor("#fffaf0")
+
         if self.active:
-            g = QLinearGradient(r.topLeft(), r.bottomLeft())
-            if chord:
-                g.setColorAt(0, QColor("#5eead4"))
-                g.setColorAt(1, QColor("#10b981"))
-                glow = QColor(52, 211, 153, 70)
-            else:
-                g.setColorAt(0, QColor("#ffd479"))
-                g.setColorAt(1, QColor("#f59e0b"))
-                glow = QColor(246, 183, 60, 70)
-            p.setPen(QPen(glow, 5))
+            glow = QColor(accent)
+            glow.setAlpha(60)
+            p.setPen(QPen(glow, max(3.0, side * 0.10)))
             p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawRoundedRect(r.adjusted(-1, -1, 1, 1), rad + 1, rad + 1)
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QBrush(g))
-            fg, fg2 = QColor("#1b1405") if not chord else QColor("#062019"), QColor(0, 0, 0, 150)
+            p.drawEllipse(QRectF(cx - r + 2, cy - r + 2, side - 4, side - 4))
+            grad = QLinearGradient(cx, cy - r, cx, cy + r)
+            grad.setColorAt(0.0, accent.lighter(112))
+            grad.setColorAt(1.0, accent2)
+            p.setBrush(grad)
+            p.setPen(QPen(QColor(255, 255, 255, 150), max(1.0, side * 0.014)))
+        elif self.role == "chord":
+            # 和弦键在游戏内是蓝色圆盘；未按下也保持蓝底，按下时更亮
+            p.setBrush(QColor("#24466f") if THEME_EFFECTIVE == "dark" else QColor("#dce9fb"))
+            p.setPen(QPen(QColor(accent.red(), accent.green(), accent.blue(), 130), 1))
         else:
-            p.setPen(QPen(QColor(C["chord_border"] if chord else C["key_border"]), 1))
-            p.setBrush(QColor(C["chord_bg"] if chord else C["key_bg"]))
-            fg = QColor(C["chord_fg"] if chord else C["key_fg"])
-            fg2 = QColor(C["chord_sub"] if chord else C["key_sub"])
-        p.drawRoundedRect(r, rad, rad)
-        h = r.height()
-        top = QRectF(r.left(), r.top() + h * 0.10, r.width(), h * 0.50)
-        bot = QRectF(r.left(), r.top() + h * 0.58, r.width(), h * 0.32)
-        p.setPen(fg)
-        p.setFont(_num_font(h * 0.36))
-        p.drawText(top, Qt.AlignmentFlag.AlignCenter, self.letter)
-        p.setPen(fg2)
-        f2 = QFont(UI_FONT)
-        f2.setPixelSize(max(10, int(h * 0.22)))
-        p.setFont(f2)
-        p.drawText(bot, Qt.AlignmentFlag.AlignCenter, self.sub)
+            p.setBrush(cream)
+            p.setPen(QPen(QColor(0, 0, 0, 38 if THEME_EFFECTIVE == "dark" else 26), 1))
+        p.drawEllipse(QRectF(cx - r, cy - r, side, side))
+
+        ring = QColor(255, 255, 255, 95) if self.active else QColor(accent)
+        ring.setAlpha(70 if self.active else 50)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(QPen(ring, 1))
+        p.drawEllipse(QRectF(cx - r * 0.84, cy - r * 0.84, side * 0.84, side * 0.84))
+
+        if self.active:
+            fg = cream
+        elif self.role == "chord":
+            fg = cream if THEME_EFFECTIVE == "dark" else accent2
+        else:
+            fg = accent
+        if self.role == "chord":
+            f = QFont(UI_FONT)
+            f.setPixelSize(max(10, int(side * 0.25)))
+            f.setBold(True)
+            p.setFont(f)
+            p.setPen(fg)
+            p.drawText(QRectF(cx - r, cy - side * 0.30, side, side * 0.36),
+                       Qt.AlignmentFlag.AlignCenter, self.chord)
+            f2 = QFont(UI_FONT)
+            f2.setPixelSize(max(8, int(side * 0.15)))
+            p.setFont(f2)
+            p.drawText(QRectF(cx - r, cy + side * 0.10, side, side * 0.24),
+                       Qt.AlignmentFlag.AlignCenter, self.letter)
+        else:
+            _draw_note_glyph(p, cx, cy - side * 0.13, side * 0.15, self.degree, fg)
+            f = QFont(UI_FONT)
+            f.setPixelSize(max(9, int(side * 0.155)))
+            f.setWeight(QFont.Weight.DemiBold)
+            p.setFont(f)
+            p.setPen(fg)
+            p.drawText(QRectF(cx - r, cy + side * 0.12, side, side * 0.22),
+                       Qt.AlignmentFlag.AlignCenter, self.solfege)
+            # 电脑键盘键位：小圆角标签，保留音频检测与键盘位置的对应关系
+            br = side * 0.115
+            bx, by = cx - r * 0.62, cy - r * 0.62
+            badge = cream if self.active else QColor(255, 255, 255, 215)
+            p.setBrush(badge)
+            p.setPen(QPen(accent2 if not self.active else QColor(cream), max(0.8, side * 0.012)))
+            p.drawEllipse(QPointF(bx, by), br, br)
+            f2 = QFont(NUM_FONT)
+            f2.setPixelSize(max(6, int(br * 1.25)))
+            p.setFont(f2)
+            p.setPen(accent2)
+            p.drawText(QRectF(bx - br, by - br, br * 2, br * 2),
+                       Qt.AlignmentFlag.AlignCenter, self.letter)
         p.end()
 
 
 class KeyPanel(QWidget):
-    """按乐器布局排列琴键，检测到发音时高亮；琴键大小随区域自适应"""
+    """按乐器排列圆形琴键；行首为谱号/和弦指板，背景随乐器与主题变化。"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.inst = None
+        self.style = KEY_STYLE_DEFAULT
+        self._rows = 0
         self.grid = QGridLayout(self)
-        self.grid.setHorizontalSpacing(8)
-        self.grid.setVerticalSpacing(8)
-        self.grid.setContentsMargins(0, 0, 0, 0)
+        self.grid.setHorizontalSpacing(4)
+        self.grid.setVerticalSpacing(0)
+        self.grid.setContentsMargins(4, 4, 6, 4)
         self.buttons = {}
+
+    def sizeHint(self):
+        return QSize(760, 260)
+
+    def paintEvent(self, e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = QRectF(self.rect()).adjusted(0, 0, -1, -1)
+        g = QLinearGradient(0, 0, 0, self.height())
+        if THEME_EFFECTIVE == "light":
+            g.setColorAt(0, QColor(self.style["light"][0]))
+            g.setColorAt(1, QColor(self.style["light"][1]))
+            line = QColor(30, 80, 110, 34)
+        else:
+            g.setColorAt(0, QColor(self.style["dark"][0]))
+            g.setColorAt(1, QColor(self.style["dark"][1]))
+            line = QColor(255, 255, 255, 22)
+        p.setBrush(g)
+        p.setPen(QPen(QColor(255, 255, 255, 20), 1))
+        p.drawRoundedRect(rect, 12, 12)
+        # 五线谱：每行键后画 5 条很淡的横线
+        p.setPen(QPen(line, 1))
+        for r in range(self._rows):
+            cr = self.grid.cellRect(r, 1)
+            if cr.isValid() and cr.height() > 10:
+                for k in range(5):
+                    y = cr.top() + cr.height() * (0.31 + k * 0.095)
+                    p.drawLine(QPointF(cr.left() - 38, y), QPointF(cr.right() + 8, y))
+        # 细小的星点，避免大面积纯色
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(255, 255, 255, 55 if THEME_EFFECTIVE == "dark" else 90))
+        for fx, fy in ((0.05, 0.18), (0.17, 0.78), (0.31, 0.12), (0.46, 0.86),
+                       (0.62, 0.20), (0.77, 0.72), (0.90, 0.30), (0.96, 0.84)):
+            p.drawEllipse(QPointF(self.width() * fx, self.height() * fy), 1.4, 1.4)
+        p.end()
 
     def set_instrument(self, inst):
         self.inst = inst
+        self.style = _key_style(inst.name)
+        self.update()
         while self.grid.count():
             item = self.grid.takeAt(0)
             w = item.widget()
             if w:
-                # 立即从面板上移除（deleteLater 要等回到事件循环才删除，期间新旧琴键会叠在一起）
                 w.hide()
                 w.setParent(None)
                 w.deleteLater()
         self.buttons.clear()
-        for r in range(4):
+        for r in range(5):
             self.grid.setRowStretch(r, 0)
+        for c in range(1, 8):
+            self.grid.setColumnStretch(c, 0)
         key_map = {k[0]: k for k in inst.keys}
         if inst.name == "悠可琴":
-            rows = [(T("和弦"), "QWERTYU"), (T("高音"), "ASDFGHJ"), (T("低音"), "ZXCVBNM")]
+            rows = [("chord", "QWERTYU", T("和弦")),
+                    ("treble", "ASDFGHJ", T("高音")),
+                    ("alto", "ZXCVBNM", T("低音"))]
         elif inst.name == "晚风圆号":
-            rows = [(T("高音"), "QWERTYU"), (T("低音"), "ASDFGHJ")]
+            rows = [("treble", "QWERTYU", T("高音")),
+                    ("bass", "ASDFGHJ", T("低音"))]
         else:
-            rows = [(T("高音"), "QWERTYU"), (T("中音"), "ASDFGHJ"), (T("低音"), "ZXCVBNM")]
-        for r, (title, letters) in enumerate(rows):
-            lab = QLabel(title)
-            lab.setObjectName("rowLabel")
-            lab.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            self.grid.addWidget(lab, r, 0)
+            rows = [("treble", "QWERTYU", T("高音")),
+                    ("alto", "ASDFGHJ", T("中音")),
+                    ("bass", "ZXCVBNM", T("低音"))]
+        self._rows = len(rows)
+        for r, (role, letters, label) in enumerate(rows):
+            icon = RowIcon(role, self.style, label)
+            self.grid.addWidget(icon, r, 0)
             for c, ch in enumerate(letters):
-                label, midi, kind, extra = key_map[ch]
+                key_label, midi, kind, extra = key_map[ch]
                 if kind == "chord":
-                    tile = KeyTile(ch, str(extra), "chord", T("和弦键 {key}：{chord}", key=ch, chord=extra))
+                    tile = KeyTile(ch, "chord", self.style,
+                                   tip=T("和弦键 {key}：{chord}", key=ch, chord=extra),
+                                   chord=str(extra))
                 else:
-                    tile = KeyTile(ch, midi_to_name(midi), "pitch",
-                                   T("键 {key} = {note}", key=ch, note=midi_to_name(midi)))
+                    try:
+                        degree = DIATONIC_OFFSETS.index(midi % 12)
+                    except ValueError:
+                        degree = 0
+                    sol = midi_to_solfege(midi)
+                    note = midi_to_name(midi)
+                    tile = KeyTile(ch, "pitch", self.style,
+                                   tip=T("键 {key} = {note}", key=ch, note=note),
+                                   solfege=sol or note, note=note, degree=degree)
                 self.grid.addWidget(tile, r, c + 1)
                 self.buttons[ch] = tile
             self.grid.setRowStretch(r, 1)
         for c in range(1, 8):
             self.grid.setColumnStretch(c, 1)
-        self.grid.setColumnMinimumWidth(0, 30)
+        self.grid.setColumnMinimumWidth(0, 46)
 
     def set_active(self, labels):
         for ch, tile in self.buttons.items():
@@ -1064,6 +1248,8 @@ class MainWindow(QMainWindow):
         self.cfg = settings.load()
         self._update_info = None
         self._update_checker = None
+        self._update_downloader = None
+        self._update_dialog = None
         self._settings_dialog = None
         self.setWindowTitle(f"{T('原神乐器演奏检测器')} v{APP_VERSION}")
         self.worker = None
@@ -1087,7 +1273,7 @@ class MainWindow(QMainWindow):
             # 首次显示时按实际高度分配三块区域：琴键/指标 30%、BPM 图 30%、时长表 40%
             self._split_init = True
             h = max(300, self.split.height())
-            self.split.setSizes([int(h * 0.30), int(h * 0.30), int(h * 0.40)])
+            self.split.setSizes([int(h * 0.40), int(h * 0.27), int(h * 0.33)])
 
     def _fit_to_screen(self):
         self.setMinimumSize(1000, 700)
@@ -1220,7 +1406,9 @@ class MainWindow(QMainWindow):
         tr.setContentsMargins(0, 0, 0, 0)
         tr.setSpacing(10)
         keys_card = Card(T("琴键"), T("高亮 = 正在发音"))
+        keys_card.body.setContentsMargins(10, 6, 10, 8)
         self.key_panel = KeyPanel()
+        self.key_panel.setMinimumHeight(130)
         keys_card.body.addWidget(self.key_panel, 1)
         tr.addWidget(keys_card, 3)
 
@@ -1697,6 +1885,8 @@ class MainWindow(QMainWindow):
             if not silent:
                 self.statusBar().showMessage(
                     T("发现新版本 v{version}", version=payload.get("latest", "")), 12000)
+            if self.cfg.get("auto_update", "0") == "1":
+                QTimer.singleShot(0, lambda: self.start_auto_update(payload))
         else:
             self._update_info = None
             self.btn_update.hide()
@@ -1709,6 +1899,77 @@ class MainWindow(QMainWindow):
             QDesktopServices.openUrl(QUrl(url))
         else:
             QDesktopServices.openUrl(QUrl(f"{APP_URL}/releases/latest"))
+
+    def start_auto_update(self, payload):
+        """下载并校验安装包，然后静默启动安装程序。只在打包后的 exe 中执行。"""
+        if self._update_downloader is not None:
+            return
+        if not getattr(sys, "frozen", False):
+            self.statusBar().showMessage(T("当前为源码运行模式，已为你打开下载页面。"), 12000)
+            self._open_release_page()
+            return
+        latest = payload.get("latest", "")
+        name = f"GenshinInstrumentDetector-{latest}-win64-setup.exe"
+        setup = next((a for a in payload.get("assets", []) if a.get("name") == name), None)
+        if setup is None or not setup.get("sha256"):
+            QMessageBox.warning(self, T("更新"), T("未找到适用于当前版本的安装包。"))
+            return
+        self._update_dialog = QProgressDialog(T("正在下载更新…"), T("取消"), 0, 100, self)
+        self._update_dialog.setWindowTitle(T("更新"))
+        self._update_dialog.setMinimumDuration(0)
+        self._update_dialog.setAutoClose(False)
+        self._update_dialog.setAutoReset(False)
+        self._update_dialog.setValue(0)
+        self._update_dialog.canceled.connect(self._cancel_update)
+        self._update_dialog.show()
+        self._update_downloader = UpdateDownloader(
+            setup["url"], setup["sha256"], int(setup.get("size") or 0), self)
+        self._update_downloader.progress.connect(self._update_dialog.setValue)
+        self._update_downloader.done.connect(self._on_update_downloaded)
+        self._update_downloader.failed.connect(self._on_update_failed)
+        self._update_downloader.start()
+
+    def _cancel_update(self):
+        if self._update_downloader is not None:
+            self._update_downloader.cancel()
+            self._update_downloader.deleteLater()
+            self._update_downloader = None
+        self._close_update_dialog()
+        self.statusBar().showMessage(T("已取消更新。"), 8000)
+
+    def _close_update_dialog(self):
+        if self._update_dialog is not None:
+            self._update_dialog.close()
+            self._update_dialog.deleteLater()
+            self._update_dialog = None
+
+    def _on_update_downloaded(self, path):
+        if self._update_downloader is not None:
+            self._update_downloader.deleteLater()
+            self._update_downloader = None
+        self._close_update_dialog()
+        if not getattr(sys, "frozen", False):
+            QMessageBox.information(self, T("更新"), T("更新已下载，请手动运行安装程序。"))
+            return
+        args = ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS"]
+        try:
+            res = QProcess.startDetached(path, args)
+            ok = res[0] if isinstance(res, tuple) else bool(res)
+        except Exception:
+            ok = False
+        if not ok:
+            QMessageBox.critical(self, T("更新"), T("安装程序启动失败。"))
+            return
+        self.statusBar().showMessage(T("正在安装更新…"), 5000)
+        QTimer.singleShot(150, QApplication.quit)
+
+    def _on_update_failed(self, error):
+        if self._update_downloader is not None:
+            self._update_downloader.deleteLater()
+            self._update_downloader = None
+        self._close_update_dialog()
+        QMessageBox.warning(self, T("更新"),
+                            T("更新下载失败：{error}", error=download_error_text(error)))
 
     def restart_app(self):
         if self.worker is not None:
@@ -1742,6 +2003,21 @@ def update_error_text(payload: dict) -> str:
     if code == "too_large":
         return T("更新信息格式不正确。")
     return T("未知错误。")
+
+
+def download_error_text(error: str) -> str:
+    mapping = {
+        "invalid": T("更新信息格式不正确。"),
+        "io": T("无法写入更新临时文件。"),
+        "timeout": T("请求超时。"),
+        "network": T("网络请求失败，请检查网络连接或代理设置。"),
+        "http": T("下载更新失败（HTTP 错误）。"),
+        "too_large": T("更新安装包过大，已取消下载。"),
+        "size": T("更新文件大小不正确，已取消安装。"),
+        "checksum": T("更新文件校验失败，已取消安装。"),
+        "format": T("更新文件格式不正确，已取消安装。"),
+    }
+    return mapping.get(error, T("未知错误。"))
 
 
 class SettingsDialog(QDialog):
@@ -1799,8 +2075,12 @@ class SettingsDialog(QDialog):
         self.lab_cur = QLabel(T("当前版本：{version}", version=APP_VERSION))
         uv.addWidget(self.lab_cur)
         self.chk_updates = QCheckBox(T("自动检查更新"))
-        self.chk_updates.setChecked((parent.cfg.get("check_updates", "1") if parent else "1") == "1")
+        self.chk_updates.setChecked((parent.cfg.get("check_updates", "0") if parent else "0") == "1")
         uv.addWidget(self.chk_updates)
+        self.chk_auto = QCheckBox(T("发现新版本后自动下载并安装"))
+        self.chk_auto.setChecked((parent.cfg.get("auto_update", "0") if parent else "0") == "1")
+        self.chk_auto.setToolTip(T("自动下载安装包并用 SHA-256 校验，校验通过后静默安装并重启应用。"))
+        uv.addWidget(self.chk_auto)
         row = QHBoxLayout()
         self.btn_check = QPushButton(T("检查更新"))
         self.btn_check.clicked.connect(self._check_updates)
@@ -1860,6 +2140,11 @@ class SettingsDialog(QDialog):
             self._release_url = payload.get("url", "")
             self.lab_upd.setText(T("发现新版本 v{version}", version=payload.get("latest", "")))
             self.btn_open.show()
+            if (self.parent_window is not None
+                    and self.parent_window.cfg.get("auto_update", "0") == "1"):
+                self.accept()
+                QTimer.singleShot(0, lambda: self.parent_window.start_auto_update(payload))
+                return
         else:
             self._release_url = ""
             self.btn_open.hide()
@@ -1875,11 +2160,14 @@ class SettingsDialog(QDialog):
         lang = self.cmb_lang.currentData()
         theme = self.cmb_theme.currentData()
         auto = "1" if self.chk_updates.isChecked() else "0"
-        ok = settings.save({"language": lang, "theme": theme, "check_updates": auto})
+        auto_install = "1" if self.chk_auto.isChecked() else "0"
+        ok = settings.save({"language": lang, "theme": theme,
+                            "check_updates": auto, "auto_update": auto_install})
         if not ok:
             QMessageBox.warning(self, T("设置"), T("设置保存失败，请检查目录权限。"))
         if self.parent_window is not None:
-            self.parent_window.cfg.update({"language": lang, "theme": theme, "check_updates": auto})
+            self.parent_window.cfg.update({"language": lang, "theme": theme,
+                                           "check_updates": auto, "auto_update": auto_install})
         changed = lang != i18n.current()
         self.accept()
         if changed and self.parent_window is not None:

@@ -1,3 +1,1 @@
-80ab04817ba5418e9c7ee029a71d45bdb485b23ccd7f26050e8dacd31e6ce7f7  GenshinInstrumentDetector-1.0.4-win64-setup.exe
-88f52c1353639d5182f6a816b49d57a92ba30fdf66d9a7213849f2fe5a9deb98  GenshinInstrumentDetector-1.0.4-win64-portable.exe
-1da2dfe34acb7f22bfdf1c16adba537337df414cdc0e549283b80b3af570e879  GenshinInstrumentDetector-1.0.3-android.apk
+f9301d20b6a47b36a5e213d6b5ece448f73764834b07eedc10dd44fa1202b134  GenshinInstrumentDetector-1.1.0-win64-setup.exe
