@@ -2,6 +2,8 @@
 
 **Version**: Windows 1.0.3 / Android 1.0.2 | Download: [GitHub Releases](https://github.com/hutao48/genshinimpact-py.found/releases/latest) | [Chinese user guide (中文使用说明)](使用说明.md)
 
+> **Note**: The application interface is currently in Simplified Chinese.
+
 | Download | Description |
 |---|---|
 | `GenshinInstrumentDetector-1.0.3-win64-setup.exe` | Windows installer (installs into the current user's folder, no administrator rights required; creates Start Menu/desktop shortcuts and an uninstaller) |
