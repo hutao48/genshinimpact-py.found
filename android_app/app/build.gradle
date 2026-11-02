@@ -3,6 +3,12 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
+// 发布版必须使用固定签名；不配置密钥时拒绝 assembleRelease，避免再次产生调试签名 APK。
+def releaseKeyStore = System.getenv("ANDROID_KEYSTORE_FILE")
+if (gradle.startParameter.taskNames.any { it.toLowerCase().contains("release") } && !releaseKeyStore) {
+    throw new GradleException("ANDROID_KEYSTORE_FILE is required for release builds (fixed Android signing).")
+}
+
 android {
     namespace 'com.genshin.detector'
     compileSdk 35

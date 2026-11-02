@@ -1,1 +1,5 @@
+# Site-hosted installer (built from the 1.1.0 source)
 f9301d20b6a47b36a5e213d6b5ece448f73764834b07eedc10dd44fa1202b134  GenshinInstrumentDetector-1.1.0-win64-setup.exe
+# GitHub Releases assets
+b64dc2c431c93e8c3700a8d82a41f3f629fefb74f3d589be76c4cc3a50d24955  GenshinInstrumentDetector-1.1.0-win64-portable.exe
+8b7bf2343c5ebe208ca741c5dd33e8e4f94c86ceee2c5778b011f3db307872a2  GenshinInstrumentDetector-1.1.0-android.apk
