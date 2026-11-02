@@ -86,6 +86,8 @@ Open the gear button in the top-right corner. All options are in one dialog:
 
 Settings are stored at `%LOCALAPPDATA%\GenshinInstrumentDetector\settings.ini`. Missing or malformed files fall back to defaults; no registry entries are written.
 
+Automatic installation runs the standard Windows installer. If you use the portable exe and want to stay portable, leave automatic installation off and download the new portable file from the Releases page.
+
 ---
 
 ## 4. Instrument Key Layouts
