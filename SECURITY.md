@@ -26,7 +26,7 @@ Include the affected version, platform, reproduction steps, and impact. You can 
 
 ## Known release-signing limitations
 
-- Windows executables are currently **not Authenticode-signed**. Verify the SHA-256 values published in `SHA256SUMS.txt` from the GitHub Release before running a downloaded file.
+- Windows executables are currently **not Authenticode-signed**. Verify the SHA-256 values published in `SHA256SUMS.txt` from the GitHub Release before running a downloaded file. The copy hosted directly on the project site has its own checksum file at `docs/downloads/SHA256SUMS.txt`.
 - Android release APKs are currently signed with the build environment's debug key unless repository signing secrets are configured. Each build can have a different signature; uninstall the previous version before upgrading. Do not treat the APK signature as a stable publisher identity.
 
 These are packaging/provenance limitations, not remote-code-execution vulnerabilities. Reports that rely on a compromised GitHub account, a compromised build runner, or a locally modified executable are generally out of scope.

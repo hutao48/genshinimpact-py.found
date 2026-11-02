@@ -21,6 +21,8 @@ Direct links:
 
 The executables are not code-signed, so Windows SmartScreen may show "Unknown publisher"; choose **More info → Run anyway**. The APK uses a per-build debug key: uninstall the previous version before upgrading.
 
+The Windows installer is also hosted directly on the project website (`docs/downloads/`); use `docs/downloads/SHA256SUMS.txt` for that copy.
+
 ## What's New in 1.0.4
 
 - **Settings window** (gear button in the top bar): language, theme and updates in one place.
