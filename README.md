@@ -1,192 +1,199 @@
-# 原神乐器演奏检测器 
+# Genshin Instrument Performance Detector
 
-**版本**：Windows 1.0.3 / Android 1.0.2　|　下载：[GitHub Releases](https://github.com/hutao48/genshinimpact-py.found/releases/latest)
+**Version**: Windows 1.0.3 / Android 1.0.2 | Download: [GitHub Releases](https://github.com/hutao48/genshinimpact-py.found/releases/latest) | [Chinese user guide (中文使用说明)](使用说明.md)
 
-| 下载文件 | 说明 |
+| Download | Description |
 |---|---|
-| `GenshinInstrumentDetector-1.0.3-win64-setup.exe` | Windows 安装程序（安装到当前用户目录，无需管理员；带开始菜单/桌面快捷方式与卸载） |
-| `GenshinInstrumentDetector-1.0.3-win64-portable.exe` | Windows 免安装单文件版，双击运行 |
-| `GenshinInstrumentDetector-1.0.2-android.apk` | Android 安装包（需关闭“安装包安全验证”；每个版本签名不同，升级前请先卸载旧版） |
+| `GenshinInstrumentDetector-1.0.3-win64-setup.exe` | Windows installer (installs into the current user's folder, no administrator rights required; creates Start Menu/desktop shortcuts and an uninstaller) |
+| `GenshinInstrumentDetector-1.0.3-win64-portable.exe` | Windows portable single-file build; just double-click to run |
+| `GenshinInstrumentDetector-1.0.2-android.apk` | Android package (package-installation verification may need to be disabled; every build is signed with a different key, so uninstall the old version before upgrading) |
 
-**更新说明**：
-- Windows 1.0.3：修复演奏停顿后轻微背景声被当成新按键；新按键门限从已确认的起音学习，停顿时保持。琴键显示改为最后一帧的当前状态，避免一批音频内已经结束的键仍高亮。大幅降低播放音量后，可停止并重新开始监听以重新学习电平。
-- 1.0.2：新增**边界值排查**（同时按下超过 10 个键、很长一段间隔完全一致的连续音，作为判断是否使用脚本的证据）；BPM 跟随变速——变速后约 1–1.5 s 跟上（旧版速度常变时可以十几秒不动），连续快速连音的读数不再卡在 300 以下；界面改为深色卡片式，BPM 图纵轴自动缩放、可切换显示范围、悬停看读数，记录保留更久（BPM 4 小时、时长表 20000 条）并可导出 CSV。
-- 1.0.1：游戏里有底噪、音效、背景音乐时，按键时长不再被频繁切断、拆成碎片或误报“松键/截止”。
-- 1.0.0：BPM 与每个音的时长检测重写（起音对齐到敲击瞬间、同键连按逐个拆开、结束方式标注、和弦合并的 BPM 估计）；新增 Windows 安装程序与离线分析（`--analyze 录音.wav`）。
+**Release notes**:
+- Windows 1.0.3: Fixed quiet background sound after a pause being mistaken for a new keypress. The threshold for new keys is now learned from confirmed onsets and held during pauses. The keyboard display now shows the current state of the last audio frame, so keys whose notes already ended inside a batch are no longer highlighted. After lowering the playback volume a lot, stop and restart monitoring to re-learn the level.
+- 1.0.2: Added **boundary check** (more than 10 keys pressed at once, or a very long run of perfectly even note gaps, as evidence for judging whether a script is being used); BPM now follows tempo changes — it catches up about 1–1.5 s after a change (the old version could sit still for a dozen seconds when the tempo changed often), and rapid consecutive notes no longer get stuck below 300. The UI became a dark card layout; the BPM chart auto-scales its vertical axis, supports switching the displayed range, and shows a readout on hover; records are kept longer (BPM for 4 hours, duration table up to 20,000 rows) and can be exported to CSV.
+- 1.0.1: With game background noise, sound effects and background music present, key durations are no longer frequently cut off, split into fragments, or falsely reported as "key release/cutoff".
+- 1.0.0: Rewrote BPM and per-note duration detection (onsets aligned to the actual strike, repeated presses of the same key split individually, end reason labeled, BPM estimated from merged chords); added a Windows installer and offline analysis (`--analyze recording.wav`).
 
 ---
 
-## 一、这是什么
+## 1. What It Is
 
-一个实时监听电脑扬声器输出声音/手机麦克风输入声音的检测工具，专门识别《原神》中 6 种演奏乐器：
+A real-time detection tool that listens to your computer's speaker output or a phone microphone input and recognizes the 6 playable instruments in *Genshin Impact*:
 
-| 乐器 | 键数 | 说明 |
+| Instrument | Keys | Notes |
 |---|---|---|
-| 风物之诗琴 | 21 键 | 三排全白键，C3–B5 |
-| 镜花之琴 | 21 键 | 与风物之诗琴同布局 |
-| 跃律琴 | 21 键 | 与风物之诗琴同布局 |
-| 谐律键琴 | 21 键 | 与风物之诗琴同布局 |
-| 晚风圆号 | 14 键 | 两排全白键，C4–B5 |
-| 悠可琴 | 12 音高 + 7 和弦键 | Q-U 和弦键 + A-J 高音 + Z-M 低音 |
+| Windsong Lyre | 21 keys | Three rows of white keys, C3–B5 |
+| Floral Zither | 21 keys | Same layout as the Windsong Lyre |
+| Vintage Lyre | 21 keys | Same layout as the Windsong Lyre |
+| Harmonic Keys | 21 keys | Same layout as the Windsong Lyre |
+| Nightwind Horn | 14 keys | Two rows of white keys, C4–B5 |
+| Ukulele | 12 pitches + 7 chord keys | Q–U chord keys + A–J high row + Z–M low row |
 
-每检测到一次演奏，程序会显示：
+For every performance, the app shows:
 
-1. **当前按下的键位**（含和弦：如 C、Dm、Em、F、G、Am、G7）——琴键面板实时高亮；
-2. **当前调性**（如 C 大调、A 小调，附置信度）；
-3. **每个音的具体时长**（毫秒级，表格最多保留 20000 条、最新的在最上面，含开始时间、按键、音名、唱名、时长、间隔、结束方式）；
-4. **当前 BPM**，并用**条形图记录 BPM 随时间的变化**（每 0.5 秒一个点，最多保留 4 小时；可切换显示最近 30 秒 / 1 分钟 / 5 分钟 / 全部，纵轴随显示的数据自动缩放，条形颜色由青到红表示由慢到快，鼠标悬停可看该时刻的读数）。
-
----
-
-## 二、快速开始
-
-1. 运行安装程序 `GenshinInstrumentDetector-1.0.3-win64-setup.exe` 后从开始菜单/桌面启动；或直接双击免安装版 exe（首次启动约需 2–5 秒，单文件模式会先解压）。
-2. 顶部选择**乐器**（默认风物之诗琴）。
-3. **采集设备**默认已选中“扬声器输出·回环”——即监听所有经过扬声器播放的声音，游戏内演奏会被自动捕获，**无需任何额外设置**。
-4. 点击 **▶ 开始监听**，然后进入游戏演奏即可。
-5. 演奏过程中，琴键高亮、按键/和弦/调性/BPM 实时刷新，BPM 条形图滚动记录变化，下方表格逐条记录每个音的时长。琴键/指标、BPM 图、时长表三块之间的分隔条可上下拖动调整大小，窗口缩放时各部分自动适应；停止后再开始（或切换乐器）记录会接着往后记，不会清空；「导出记录」可把时长表与 BPM 记录存成 CSV。
-
-> 若检测不灵敏或误报较多：拖动**灵敏度**滑块（建议 40%–70%），数值越大越灵敏、也越容易受背景声音影响。
+1. **The keys currently held** (including chords such as C, Dm, Em, F, G, Am and G7) — the on-screen keyboard highlights them in real time.
+2. **The current key** (e.g., C major or A minor, with a confidence value).
+3. **The exact duration of every note** (millisecond precision; the table keeps up to 20,000 rows, newest first, with start time, key, note name, solfège, duration, gap and end reason).
+4. **The current BPM**, plus a **bar chart of how BPM changes over time** (one point every 0.5 s, up to 4 hours; switch between the last 30 s / 1 min / 5 min / all, with the vertical axis auto-scaled to the visible data, bar colors running from cyan to red as the tempo goes from slow to fast, and a tooltip showing the reading at any moment).
 
 ---
 
-## 三、乐器键位对照
+## 2. Quick Start
 
-### 21 键琴（风物之诗琴 / 镜花之琴 / 跃律琴 / 谐律键琴）
+1. Run `GenshinInstrumentDetector-1.0.3-win64-setup.exe` and launch the app from the Start Menu/desktop, or double-click the portable exe (the first launch takes about 2–5 s because the single-file build extracts itself).
+2. Choose an **instrument** at the top (Windsong Lyre by default).
+3. The **capture device** is already set to "Speaker output · loopback" — it listens to everything played through the speakers, so in-game performances are captured automatically, **with no extra configuration**.
+4. Click **▶ Start listening**, then play in the game.
+5. While you play, key highlights, pressed keys/chords, key and BPM refresh in real time, the BPM bar chart scrolls, and the table below logs each note's duration. Drag the separators between the keyboard/metrics, BPM chart and duration table to resize them; the layout adapts when the window is resized. Stopping and starting again (or switching instruments) keeps appending to the existing records instead of clearing them; **Export** saves the duration table and BPM history as CSV.
 
-三排全白键，对应 C 大调自然音阶：
+> If detection feels insensitive or reports too many false positives, adjust the **Sensitivity** slider (40%–70% is a good range). Higher values are more sensitive and also pick up more background sound.
 
-| 排 | 键位 | 音域 |
+---
+
+## 3. Instrument Key Layouts
+
+### 21-key instruments (Windsong Lyre / Floral Zither / Vintage Lyre / Harmonic Keys)
+
+Three rows of white keys covering the C major scale:
+
+| Row | Keys | Range |
 |---|---|---|
-| 上排 | Q W E R T Y U | C5 – B5 |
-| 中排 | A S D F G H J | C4 – B4 |
-| 下排 | Z X C V B N M | C3 – B3 |
+| Top | Q W E R T Y U | C5 – B5 |
+| Middle | A S D F G H J | C4 – B4 |
+| Bottom | Z X C V B N M | C3 – B3 |
 
-### 晚风圆号（14 键）
+### Nightwind Horn (14 keys)
 
-| 排 | 键位 | 音域 |
+| Row | Keys | Range |
 |---|---|---|
-| 上排 | Q W E R T Y U | C5 – B5 |
-| 下排 | A S D F G H J | C4 – B4 |
+| Top | Q W E R T Y U | C5 – B5 |
+| Bottom | A S D F G H J | C4 – B4 |
 
-### 悠可琴（12 音高 + 7 和弦键）
+### Ukulele (12 pitches + 7 chord keys)
 
-| 排 | 键位 | 说明 |
+| Row | Keys | Notes |
 |---|---|---|
-| 和弦行 | Q=C　W=Dm　E=Em　R=F　T=G　Y=Am　U=G7 | 按一个键即发出一整个和弦 |
-| 高音行 | A S D F G H J | C5 – B5 |
-| 低音行 | Z X C V B N M | C4 – B4 |
+| Chord row | Q=C　W=Dm　E=Em　R=F　T=G　Y=Am　U=G7 | Pressing one key plays a full chord |
+| High row | A S D F G H J | C5 – B5 |
+| Low row | Z X C V B N M | C4 – B4 |
 
 ---
 
-## 四、关于“监听扬声器输出”（不止本台电脑使用）
+## 4. Listening to Speaker Output (and Other Devices)
 
-- **默认模式——扬声器输出·回环**：程序通过 Windows WASAPI 环回采集（loopback），捕获**所有应用经扬声器播放的声音**。游戏内演奏、本机播放的任何音频都会被直接识别，这是推荐且零配置的模式。
-- **切换模式——麦克风**：设备下拉框中所有标注“（麦克风）”的条目均可选。选择后程序改为从麦克风/线路输入采集，可用来监听**其他电脑或外接设备**播放的声音：
-  - 将另一台设备（手机、另一台电脑、NS/PS 等）的音频输出，通过**音频线接入本机的线路输入（Line-in）或麦克风口**；
-  - 或在 Windows 声音设置中开启**立体声混音（Stereo Mix）**，将外部音频作为输入源。
-- 设备下拉框列举本机全部可用采集设备，点击**刷新**可重新枚举；同一台电脑接入了多个声卡/采集器时会全部列出。
+- **Default mode — speaker output · loopback**: The app uses Windows WASAPI loopback capture to record **everything any application plays through the speakers**. In-game performances and any audio played on this machine are recognized directly. This is the recommended, zero-configuration mode.
+- **Alternative mode — microphone**: Every entry marked "(Microphone)" in the device drop-down can be selected. The app then captures from a microphone or line input, which lets you listen to sound played by **another computer or an external device**:
+  - Connect the audio output of another device (phone, second computer, Switch/PlayStation, etc.) to this computer's **line-in or microphone input** with an audio cable;
+  - Or enable **Stereo Mix** in Windows sound settings and use it as the input source.
+- The device drop-down lists every available capture device. Click **Refresh** to enumerate them again; all sound cards and capture devices connected to the computer are listed.
 
 ---
 
-## 五、界面说明
+## 5. Interface Guide
 
-| 区域 | 内容 |
+| Area | Contents |
 |---|---|
-| 琴键 | 当前正在发音的键高亮（金色 = 音符键，绿色 = 和弦键），琴键大小随窗口自适应 |
-| 实时指标 | 当前按键（音名）、检测到的和弦、当前调性、当前 BPM（下方小字为图表显示范围内的最低–最高 BPM） |
-| BPM 变化 | 条形图，横轴为时间（分:秒）、纵轴为 BPM（按当前显示的数据自动缩放）；每 0.5 秒一个点，最多保留 4 小时；右上角切换显示范围（30 秒 / 1 分钟 / 5 分钟 / 全部），上方显示范围内的当前 / 平均 / 最低 / 最高；虚线为当前读数，鼠标悬停显示该时刻读数 |
-| 每个音的时长 | 表格：开始时间（分:秒.毫秒）/ 按键 / 音名 / 唱名 / 时长(ms) / 间隔(ms) / 结束方式，最新在上，最多保留 20000 条（见下方"时长与 BPM 的口径"） |
-| 移调 | 音高基准校准（半音，-12～+12），若检测出的音高与实际不符可用它整体平移 |
-| 清空记录 | 清空表格、BPM 历史与实时显示 |
-| 导出记录 | 把时长表、BPM 记录、边界值排查结果导出为 CSV（Excel 可直接打开）：`演奏记录_日期_时间.csv` 与同名 `_BPM.csv`、`_排查.csv` |
-| 边界值排查 | 时长表旁边的第二页（顶栏的「排查」状态点击也可进入）：列出超出人手极限的操作，见下方"边界值排查" |
+| Keyboard | Currently sounding keys are highlighted (gold = pitch key, green = chord key); key size adapts to the window |
+| Live metrics | Current key (note name), detected chord, current key/tonality and current BPM (the small text below shows the lowest–highest BPM in the visible chart range) |
+| BPM history | Bar chart with time (min:s) on the x-axis and BPM on the y-axis (auto-scaled to the visible data); one point every 0.5 s, kept for up to 4 hours; use the top-right control to switch the range (30 s / 1 min / 5 min / all); the header shows the current/average/minimum/maximum values in that range; the dashed line marks the current reading, and hovering shows the reading at that moment |
+| Note durations | Table: start time (min:s.ms) / key / note name / solfège / duration (ms) / gap (ms) / end reason, newest first, up to 20,000 rows (see "How durations and BPM are defined" below) |
+| Transpose | Pitch-reference calibration in semitones (−12 to +12); shift everything if detected pitches do not match the real ones |
+| Clear | Clears the table, BPM history and live readouts |
+| Export | Exports the duration table, BPM history and boundary-check results as CSV files (open directly in Excel): `演奏记录_日期_时间.csv` plus matching `_BPM.csv` and `_排查.csv` files |
+| Boundary check | The second tab next to the duration table (also reachable by clicking the "Check" status in the top bar): lists operations that exceed human limits; see "Boundary check" below |
 
-**时长与 BPM 的口径**
+**How durations and BPM are defined**
 
-- **开始时间**：对齐到真实敲击瞬间（细分辨率起音函数，误差约 ±5 ms），时间轴为"开始监听后的音频时长"。
-- **时长**：起音 → 该音结束，「结束方式」一栏说明是怎么结束的：
-  - `松键/截止`：声音被急速截止（松键止音、圆号松键、被截断），时长 = 按键时长（已扣除释放尾音）；
-  - `同键重按`：同一键被再次按下，时长 = 到再次按下的时间（连按同一键会逐个拆开）；
-  - `余音自然衰减`：拨弦类乐器松键后余音照常衰减，**松键时刻在声音里不可观测**，这里给出的是余音可辨的长度，不是按键时长。
-- **间隔**：与上一个起音的时间差（和弦算一次起音）。脚本"按下→保持→松开→下一个"式演奏时，间隔 ≈ 按键时长 + 固定开销。
-- **BPM**：= 60 / 起音周期（最常见的规则起音间隔单位）。全是八分音符的旋律给出的是八分音符速率。读数跟随当前演奏速度：变速后约 1–1.5 s 跟上；如果只是音符突然变密/变稀（新速度正好是原来的 2、3、4 倍或几分之一），要持续约 1 s（变密）/ 3 s（变稀）才会切换，以免读数来回翻倍；连续的快速连音（每个音 < 0.2 s）读数会超过 300。
+- **Start time**: aligned to the actual strike (fine-resolution onset function, error about ±5 ms); the timeline is the audio time since monitoring started.
+- **Duration**: from onset to the end of the note. The **end reason** column explains how it ended:
+  - `Key release / cutoff`: the sound was cut off abruptly (key released, horn key released, or truncated); duration = key hold time (release tail subtracted);
+  - `Same-key re-press`: the same key was pressed again; duration = time until the next press (repeated presses of one key are split individually);
+  - `Natural decay`: on plucked instruments the sound keeps decaying after the key is released, and **the release moment cannot be observed in the audio**; this value is the audible decay length, not the key hold time.
+- **Gap**: time since the previous onset (a chord counts as one onset). With script-style "press → hold → release → next" playing, the gap is approximately the key hold time plus a fixed overhead.
+- **BPM**: 60 / onset period (the most common regular onset interval unit). A melody made entirely of eighth notes therefore reports the eighth-note rate. The reading follows the current tempo: about 1–1.5 s after a tempo change. If the notes merely become denser or sparser (the new tempo is exactly 2, 3 or 4 times the old one, or a fraction of it), it takes about 1 s (denser) / 3 s (sparser) before switching, to avoid the reading flipping back and forth. A continuous rapid run (each note < 0.2 s) can read above 300.
 
-**边界值排查（判断是不是自动演奏脚本的证据）**
+**Boundary check (evidence for judging whether an auto-play script is being used)**
 
-只报证据、不下结论，分两级：「超出人手极限」= 人做不到；「疑似机械操作」= 人极难做到，需要结合其它证据。
+This only reports evidence; it does not draw conclusions. There are two levels: "Beyond human limits" = a human cannot do it; "Suspected mechanical input" = a human would find it extremely difficult and other evidence is needed.
 
-- **同时按下超过 10 个键**（人只有 10 根手指）：起音相差 ≤ 45 ms 的算同一次按下，对这次按下前后的频谱做对比，按每个键基频处新出现的谱峰数键。能被更低的键的谐波解释的、明显比相邻键弱的"假音"、按下之后才响起的音都不算；谐波电平从录音里单独按下的音自动学出来。计数误差约 ±1 个键（后面紧跟着别的音时更大），所以估计 ≥ 12 个才报"超出人手极限"，11 个只报"疑似"。注意电脑键盘上一根手指能压住两个相邻键，这是强证据而不是铁证；悠可琴有和弦键（一个键发出好几个音），不做这项；圆号谐波强，计数偏少。
-- **很长一段连续音的间隔完全一致**（机器级精度）：原神的声音按约 21 ms（1024 样本）一块发出，按键时刻被对齐到块上，人手十几毫秒以内的误差在录音里看不见——**短的轮指，人弹出来也是"间隔完全一致"**。所以只报很长的段：连续 N 个起音全部与一条完美等间隔的时间线吻合到一个发声块以内，N 按速度标定（例如约 300 ms 一个音要 52 个、约 120 ms 一个要 66 个；速度正好接近发声块整数倍时更长，个别速度不判断）。标定用人手计时模型模拟"很稳的人"弹 240 个音的长轮指，被误判的概率 < 0.5%。如果游戏逐帧读取按键，脚本也会被帧打乱，这一项会漏报（但不会因此多冤枉人）。
-- 实测（`python eval_screening.py`）：≤ 10 个键的和弦 240 次按下里"超出人手极限" 0 次、"疑似" 2 次（后面紧跟着旋律时 9、10 键和弦各被估成 11 一次）；诗琴 12 键和弦 24 次报出 22 次（20 次为"超出人手极限"），14 键 24 次报出 21 次；圆号计数偏少，14 键和弦只报"疑似"；脚本式长轮指 30/32 段报出，模拟的人手长轮指 64 段 0 误报；7 段真实录音（含一段手弹的频繁变速录音）0 处发现。
+- **More than 10 keys pressed at the same time** (a human has only 10 fingers): notes whose onsets are within 45 ms of each other count as one press; the spectra before and after that press are compared, and the number of new spectral peaks at each key's fundamental is counted. Peaks that can be explained as harmonics of a lower key, obvious "ghost notes" much weaker than neighboring keys, and notes that only start after the press are not counted; harmonic levels are learned automatically from notes played alone in the recording. The count error is about ±1 key (larger when other notes follow immediately), so "Beyond human limits" is reported only at ≥ 12; 11 is reported as "Suspected". Note that one finger can press two adjacent keys on a computer keyboard, so this is strong evidence, not conclusive proof. The Ukulele has chord keys (one key sounds several notes) and is excluded from this check; the horn has strong harmonics and tends to undercount.
+- **A very long run of notes with perfectly even gaps** (machine-level precision): Genshin emits audio in blocks of about 21 ms (1024 samples), so key times snap to block boundaries and human timing errors of a dozen milliseconds are invisible in the recording — **even a short trill played by a human looks "perfectly even"**. Therefore only long runs are reported: N consecutive onsets that all match a perfectly even timeline within one audio block, with N calibrated by tempo (for example, 52 notes at about 300 ms per note, 66 at about 120 ms; longer when the tempo is close to an integer multiple of the audio block, and some tempos are not judged at all). The calibration uses a human timing model that simulates a very steady player performing a 240-note run; the false-positive probability is < 0.5%. If the game reads keys per frame, a script is also disturbed by frames, so this check can miss it (but it will not falsely accuse).
+- Measured results (`python eval_screening.py`): among 240 presses of chords with ≤ 10 keys, 0 were reported as "Beyond human limits" and 2 as "Suspected" (when a melody followed immediately, 9- and 10-key chords were each estimated at 11 once); 22 of 24 12-key lyre chords were reported (20 as "Beyond human limits"), and 21 of 24 14-key chords; the horn undercounts, and a 14-key chord was reported only as "Suspected"; script-style long runs were reported in 30 of 32 cases, while 64 simulated human long runs produced 0 false positives; 7 real recordings (including one hand-played recording with frequent tempo changes) produced 0 findings.
 
 ---
 
-## 六、常见问题
+## 6. FAQ
 
-| 现象 | 处理 |
+| Symptom | What to do |
 |---|---|
-| 找不到采集设备 | 确认扬声器/麦克风驱动正常；点击“刷新”；在 Windows 声音设置中允许应用访问麦克风（若用麦克风模式） |
-| 检测不到音 | 灵敏度适当调高；确认没有把音量静音；游戏内演奏的音量建议开大一些 |
-| 误报/持续乱跳 | 灵敏度调低；关闭后台播放音乐的软件；检查是否有其他声音在播放 |
-| 音高整体不对（高/低八度） | 用“移调”调整 ±12 半音内 |
-| 杀毒软件提示 | PyInstaller 单文件程序可能被部分杀软误报，添加信任即可；本程序不联网、不写注册表 |
-| 程序异常 | 日志文件：`%LOCALAPPDATA%\GenshinInstrumentDetector\app.log`，排查时查看此文件 |
+| No capture device found | Check that the speaker/microphone drivers work; click **Refresh**; allow apps to access the microphone in Windows sound settings (if using microphone mode) |
+| No notes detected | Raise the sensitivity; make sure the volume is not muted; turn up the in-game performance volume |
+| False positives / constant jumping | Lower the sensitivity; close software that plays music in the background; check whether other sounds are playing |
+| Pitches are consistently wrong (an octave too high/low) | Use **Transpose** to shift within ±12 semitones |
+| Antivirus warning | PyInstaller single-file builds are sometimes flagged by antivirus software; add an exception. The app does not access the network or write to the registry |
+| The app misbehaves | Log file: `%LOCALAPPDATA%\GenshinInstrumentDetector\app.log`; check it when troubleshooting |
 
-**诊断模式**：设置环境变量 `GID_DEBUG=1` 后运行 EXE，会在日志中记录设备打开与运行状态，便于远程排查。
+**Diagnostic mode**: Set the environment variable `GID_DEBUG=1` before running the EXE; device opening and runtime status are then written to the log for remote troubleshooting.
 
-**离线分析录音**：`原神乐器演奏检测器.exe --analyze 录音.wav [结果.txt] [乐器名]`，结果默认写到录音旁边的「录音名_分析.txt」（每个音的开始时间、按键、时长、间隔、结束方式以及 BPM、调性、边界值排查结果、每秒的 BPM 读数）。别人的演奏视频可以先用 ffmpeg 取出声音：`ffmpeg -i 视频.mp4 -vn -ac 1 -ar 48000 录音.wav`。
-
----
-
-## 七、技术说明（简述）
-
-- 采集：WASAPI 回环/麦克风双模式，48 kHz、2048 采样/块；**所有时间戳取音频样本时钟**（实时与离线结果一致，不受读块抖动影响）。
-- 检测：FFT（4096 + 16384 零填充）提取基频与谐波结构，逐键跟踪；攻击门限 + 谐波结构校验剔除背景杂音；连续 4 帧确认。
-- 起音：1024 窗 / 256 帧移的 log 谱通量（SuperFlux 式）定位敲击瞬间；新音必须对应一个起音峰；硬截止"咔哒"（其后总功率下降）不算起音；与更强音同时出现、弱 6 dB 以上且 0.25 s 内消失的"起音旁瓣"剔除。
-- 时长：按该音自身电平轨迹定位结束——急速截止取 -6 dB 半幅点并按截止陡峭度查表扣除释放尾音；同键重按（起音前后整窗电平回到"刚按下"水平）在新起音处结束；否则为余音自然衰减。
-- 时长抗噪（1.0.1）：游戏里的环境底噪、短促音效、背景音乐不再轻易切断时长或拆出碎片——
-  - 开新音、判定同键重按都要求**本音频点**像真实按键那样上升并持续（短促音效 130 ms 内就落回原电平；仍在响的余音不会上升；宽带噪音会把所有频点一起抬高、本音并不突出）；
-  - 用二次谐波作重按证据时基频必须同向变化（弱谐波一点噪音就能"上升"）；重按沿用该键上一次"刚按下"的电平作参考（原神乐器无力度变化，避免误判后参考被越抬越高）；
-  - 已在响的音只由精确音高的峰维持（背景音乐里的半音不会把它"撑"着）；
-  - 判"松键/截止"时：趋势线只用电平到顶后的帧拟合；干涉拍频造成的凹陷在 0.35 s 内回升的不算；电平起伏大（与相邻键/背景音乐拍频）时要求更深的跌落；拟合不可靠时要求截止式的急速跌落（快于 100 dB/s）；噪音里的"咔哒"只有与本音跌落区间吻合才用于对齐。
-- BPM：和弦合并为一个起音事件 → 一/二/三阶起音间隔在候选周期上做软高斯核打分（按倍数 1/√k 降权，抑制半周期/倍周期）→ 分段同相位网格合并回归精修。
-- BPM 跟随变速（1.0.2）：最近 6 个起音一致指向新速度即切换，从变速处开始新的速度段（约 1–1.5 s 跟上，旧版要 4–6 s，速度常变时甚至十几秒不动）；同一速度段内加权估计、只做微调，稳定速度下精度不变；新旧速度成整数倍时（可能只是音符变密/变稀）需持续更久才切换（变快 0.8 s、变慢 3.2 s），避免读数来回翻倍；连续快速连音时周期下限从 0.2 s 放宽到 0.07 s（读数可到约 850，不再卡在 300 以下）；噪音多、读数长时间得不到最近起音支持时改信 12 s 长窗估计。
-- 调性（1.0.2 改进）：Krumhansl-Schmuckler 调性轮廓匹配，用最近 20 秒、至少 6 个音；每个音按"占时"（到下一个音的时间）而不是余音长度加权，低音和句尾音（其后有停顿）多加权；原神这几种琴只有白键，候选只在 C 大调 / A 小调之间选（不会报出琴上弹不出来的调）；置信度 = 第一名相对第二名领先多少，分不开时显示"与 X 难分"；新调持续领先 2.5 秒才切换显示。
-- 和弦（1.0.2 改进）：只看最近一次同时按下的那组音（之前还在响的余音、之后在和弦上弹的旋律音都不算），分解和弦从最近一个低音累积；单音旋律（低音之上是级进）不报和弦；常见三和弦/七和弦优先，低音是根音加分，显示转位（如 C/E）；敲击产生的相邻频点假音不参与；变化要保持 0.15 秒才切换显示。
-- 评测：`python test_detection.py`（合成音频回归测试，带断言）；`python benchmark_timing.py --old`（带真值的时间精度基准，并与 git HEAD 版本对比）；`python benchmark_timing.py --noise --old`（底噪/音效/背景音乐下时长模块的敏感度对比）；`python benchmark_timing.py --tempo --old`（频繁变速时 BPM 多快跟上、稳定速度时是否乱跳）；`python eval_harmony.py`（和弦/调性算法与旧版对比）；`python eval_screening.py`（边界值排查：大和弦计数、长轮指的脚本检出与人手误报、真实录音）。
+**Offline analysis of a recording**: `原神乐器演奏检测器.exe --analyze recording.wav [result.txt] [instrument name]`. The result is written by default next to the recording as "<recording name>_分析.txt" (start time, key, duration, gap and end reason for every note, plus BPM, key, boundary-check results and a per-second BPM reading). To extract the audio from someone else's performance video, use ffmpeg first: `ffmpeg -i video.mp4 -vn -ac 1 -ar 48000 recording.wav`.
 
 ---
 
-## 八、目录结构（源码版）
+## 7. Technical Notes (Brief)
+
+- **Capture**: WASAPI loopback/microphone dual mode, 48 kHz, 2048 samples per block; **all timestamps use the audio sample clock** (real-time and offline results agree, unaffected by read jitter).
+- **Detection**: FFT (4096 + 16384 zero-padding) extracts fundamentals and harmonic structure, tracked key by key; an attack threshold plus harmonic-structure validation rejects background noise; four consecutive frames are required for confirmation.
+- **Onset**: log-spectral flux with a 1024-sample window / 256-sample hop (SuperFlux-style) locates the strike; a new note must correspond to an onset peak; hard-cutoff "clicks" (total power drops afterwards) are not onsets; "onset side lobes" that appear together with a stronger note, are more than 6 dB weaker and disappear within 0.25 s are removed.
+- **Duration**: the end is located from the note's own level envelope — a rapid cutoff uses the −6 dB half-amplitude point and subtracts a release tail looked up from the cutoff steepness; a same-key re-press (the whole-window level around the onset returns to the "just pressed" level) ends at the new onset; otherwise the note is considered to decay naturally.
+- **Noise robustness for durations (1.0.1)**: ambient noise, short sound effects and background music in the game no longer easily cut durations or split them into fragments —
+  - starting a new note and detecting a same-key re-press both require the note's own bins to rise and persist like a real keypress (short sound effects fall back within 130 ms; a still-ringing note does not rise; broadband noise raises all bins equally, so the note is not prominent);
+  - when the second harmonic is used as evidence of a re-press, the fundamental must move in the same direction (a weak harmonic can "rise" on a little noise); a re-press uses the key's previous "just pressed" level as its reference (Genshin instruments have no velocity, which prevents the reference from drifting upward after a false positive);
+  - a note that is already sounding is sustained only by peaks at its exact pitch (semitones in background music cannot keep it alive);
+  - when judging "key release/cutoff": the trend line is fitted only from frames after the level peaks; dips caused by interference beating that recover within 0.35 s do not count; when the level fluctuates a lot (beating with neighboring keys/background music), a deeper drop is required; when the fit is unreliable, a cutoff-style rapid drop (faster than 100 dB/s) is required; clicks in noise are used for alignment only if they match the note's drop interval.
+- **BPM**: chords are merged into a single onset event → first-, second- and third-order onset intervals are scored with a soft Gaussian kernel over candidate periods (weighted by 1/√k for multiples to suppress half/double periods) → piecewise same-phase grid merging and regression refinement.
+- **BPM tempo following (1.0.2)**: switch when the last 6 onsets consistently point to a new tempo, starting a new tempo segment at the change (about 1–1.5 s to catch up; the old version took 4–6 s, or even a dozen seconds when the tempo changed often); within a segment, a weighted estimate with only minor adjustments, so accuracy at a steady tempo is unchanged; when the new and old tempos are integer multiples (which may just be denser/sparser notes), a longer persistence is required to switch (0.8 s faster, 3.2 s slower) to avoid doubling back; for rapid consecutive runs the period floor is lowered from 0.2 s to 0.07 s (readings up to about 850, no longer stuck below 300); when there is a lot of noise and the reading has long lacked support from recent onsets, a 12 s long-window estimate is used instead.
+- **Tonality (improved in 1.0.2)**: Krumhansl-Schmuckler key-profile matching over the last 20 s and at least 6 notes; each note is weighted by its "occupied time" (until the next note) rather than its decay length, with extra weight for bass notes and phrase-ending notes (followed by a pause); these Genshin instruments have only white keys, so the candidates are limited to C major / A minor (the app never reports a key that cannot be played on the instrument); confidence = how far the first candidate leads the second, showing "hard to distinguish from X" when they are close; a new key must lead for 2.5 s before the display switches.
+- **Chords (improved in 1.0.2)**: only the most recent group of simultaneously pressed notes is considered (previously ringing notes and melody notes played on top of the chord afterwards do not count); arpeggios accumulate from the most recent bass note; a monophonic melody (steps above the bass) is not reported as a chord; common triads/sevenths are preferred, a bass note that is the root gets a bonus, and inversions are shown (e.g., C/E); ghost notes at adjacent frequencies caused by the strike do not participate; a change must persist for 0.15 s before the display switches.
+- **Evaluation**: `python test_detection.py` (synthetic-audio regression tests with assertions); `python benchmark_timing.py --old` (timing-accuracy benchmark with ground truth, compared against the git HEAD version); `python benchmark_timing.py --noise --old` (sensitivity comparison of the duration module under background noise/sound effects/music); `python benchmark_timing.py --tempo --old` (how quickly BPM follows frequent tempo changes and whether it jumps at a steady tempo); `python eval_harmony.py` (chord/tonality algorithms compared with the old version); `python eval_screening.py` (boundary check: large-chord counting, script detection and human false positives for long runs, real recordings).
+
+---
+
+## 8. Source Layout
 
 ```
-├── main.py               入口 + 异常日志 + 离线分析（--analyze）
-├── app_version.py        版本号（界面、exe 属性、安装程序共用）
-├── ui_main.py            PySide6 界面
-├── audio_capture.py      音频采集（回环/麦克风）
-├── detection.py          检测引擎
-├── screening.py          边界值排查（超出人手极限的操作）
-├── instruments.py        乐器定义与键位
-├── test_detection.py     回归测试（合成音频 5 组 + 边界值排查 4 组，带断言）
-├── benchmark_timing.py   时间精度基准（起音/时长/BPM 真值对比，--old 对比旧版，--noise 噪音场景，--tempo 频繁变速）
-├── eval_recordings.py    真实录音新旧版对比
-├── eval_harmony.py       和弦 / 调性算法评测（已知音符，与旧版对比）
-├── eval_screening.py     边界值排查评测（大和弦计数、长轮指、真实录音）
-├── packaging/            Windows 打包：PyInstaller spec、Inno Setup 安装脚本、图标、一键打包脚本
-├── android_app/          Android 端（Kotlin）
-└── .github/workflows/    GitHub Actions：推送 v* tag 自动构建 exe/安装程序/APK 并发布 Release
+├── main.py               Entry point + exception logging + offline analysis (--analyze)
+├── app_version.py        Version number (shared by the UI, exe properties and installer)
+├── ui_main.py            PySide6 UI
+├── audio_capture.py      Audio capture (loopback/microphone)
+├── detection.py          Detection engine
+├── screening.py          Boundary check (operations beyond human limits)
+├── instruments.py        Instrument definitions and key layouts
+├── diag.py               Optional diagnostic log (GID_DEBUG=1)
+├── test_detection.py     Regression tests (5 synthetic-audio groups + 4 boundary-check groups, with assertions)
+├── test_stop_keys.py     Pause/background-noise and key-display regression tests
+├── benchmark_timing.py   Timing-accuracy benchmark (onset/duration/BPM vs. ground truth; --old compares with the old version, --noise covers noise scenarios, --tempo covers frequent tempo changes)
+├── eval_recordings.py    Old/new comparison on real recordings
+├── eval_harmony.py       Chord/tonality algorithm evaluation (known notes, compared with the old version)
+├── eval_screening.py     Boundary-check evaluation (large chords, long runs, real recordings)
+├── web_test*.wav, v2_lowhigh.wav, score_test.wav   Real recordings used by the evaluation scripts
+├── score_seq.json        Note sequence used by the scripted-score benchmark
+├── requirements.txt      Runtime dependencies
+├── packaging/            Windows packaging: PyInstaller spec, Inno Setup script, icon, one-click build script
+├── android_app/          Android app (Kotlin)
+└── .github/workflows/    GitHub Actions: pushing a v* tag builds the exe/installer/APK and publishes a Release
 ```
 
-## 九、自行打包
+---
 
-**Windows（exe + 安装程序）**：需要 Python 3.10+ 与 [Inno Setup 6](https://jrsoftware.org/isinfo.php)。
+## 9. Building It Yourself
+
+**Windows (exe + installer)**: requires Python 3.10+ and [Inno Setup 6](https://jrsoftware.org/isinfo.php).
 
 ```
 python -m pip install -r packaging\requirements-build.txt
 powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
 ```
 
-产物在 `dist\`：`原神乐器演奏检测器.exe`（单文件）、`GenshinInstrumentDetector-<版本>-win64-portable.exe`、`GenshinInstrumentDetector-<版本>-win64-setup.exe`。
+The output goes to `dist\`: `原神乐器演奏检测器.exe` (single file), `GenshinInstrumentDetector-<version>-win64-portable.exe`, and `GenshinInstrumentDetector-<version>-win64-setup.exe`.
 
-**发布**：修改 `app_version.py` 与 `android_app/app/build.gradle` 中的版本号后，推送 tag（如 `git tag v1.0.1 && git push origin v1.0.1`），GitHub Actions 会自动构建三个安装包并创建 Release。Android 正式签名可在仓库 Secrets 中配置 `ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD`，未配置时使用调试密钥签名。
+**Release**: update the version in `app_version.py` and `android_app/app/build.gradle`, then push a tag (for example, `git tag v1.0.1 && git push origin v1.0.1`). GitHub Actions builds the three packages and creates a Release. For a production Android signature, configure `ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD` in the repository Secrets; without them the debug key is used.
