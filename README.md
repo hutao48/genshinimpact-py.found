@@ -209,6 +209,7 @@ This only reports evidence; it does not draw conclusions. There are two levels: 
 ├── instruments.py        Instrument definitions and key layouts
 ├── diag.py               Optional diagnostic log (GID_DEBUG=1)
 ├── requirements.txt      Runtime dependencies
+├── SECURITY.md           Security policy and release-signing notes
 ├── packaging/            Windows packaging: PyInstaller spec, Inno Setup script, icon, one-click build script
 ├── android_app/          Android app (Kotlin)
 ├── docs/                 Public download/landing site (GitHub Pages)
