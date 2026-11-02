@@ -4,8 +4,8 @@
 
 | Platform | Supported |
 |---|---|
-| Windows | 1.1.0 (latest) |
-| Android | 1.1.0 (latest) |
+| Windows | 1.1.1 (latest) |
+| Android | 1.1.1 (latest) |
 
 Older releases are not maintained. Please upgrade before reporting an issue that may already be fixed.
 
@@ -27,7 +27,7 @@ Include the affected version, platform, reproduction steps, and impact. You can 
 
 ## Android signing
 
-Starting with 1.1.0, release APKs are signed with a fixed release key supplied to CI through the `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD` repository Secrets. The workflow fails instead of producing a debug-signed release if the key is missing. Future 1.1.x/1.x releases use the same certificate and can be installed over the previous version. Versions 1.0.3 and earlier used per-build debug keys; upgrading from them to 1.1.0 requires uninstalling the old app once.
+Starting with 1.1.0, release APKs are signed with a fixed release key supplied to CI through the `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD` repository Secrets. The workflow fails instead of producing a debug-signed release if the key is missing. Future 1.1.x/1.x releases use the same certificate and can be installed over the previous version. Versions 1.0.3 and earlier used per-build debug keys; upgrading from them to 1.1.0/1.1.1 requires uninstalling the old app once.
 
 ## Known release-signing limitations
 
@@ -38,4 +38,4 @@ These are packaging/provenance limitations, not remote-code-execution vulnerabil
 
 ## Dependency and code checks
 
-Release builds use pinned Python packaging dependencies (`packaging/requirements-build.txt`); the repository's dependency pins were checked against OSV/pip-audit with no known advisories at the time of the 1.1.0 release. Static review covers the Python, Kotlin and GitHub Actions code; the CI workflow pins third-party actions to commit SHAs and verifies that a release tag matches `app_version.py`.
+Release builds use pinned Python packaging dependencies (`packaging/requirements-build.txt`); the repository's dependency pins were checked against OSV/pip-audit with no known advisories at the time of the 1.1.1 release. Static review covers the Python, Kotlin and GitHub Actions code; the CI workflow pins third-party actions to commit SHAs and verifies that a release tag matches `app_version.py`.

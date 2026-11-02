@@ -35,7 +35,7 @@ class MainActivity : AppCompatActivity() {
     companion object {
         const val SAMPLE_RATE = 44100
         const val FFT_SIZE = 4096
-        const val APP_VERSION = "1.1.0"
+        const val APP_VERSION = "1.1.1"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

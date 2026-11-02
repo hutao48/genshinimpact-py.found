@@ -16,7 +16,7 @@ import java.security.MessageDigest
  * 只下载 `-android.apk` 资产，不执行除系统安装器以外的任何内容。
  */
 object UpdateChecker {
-    const val APP_VERSION = "1.1.0"
+    const val APP_VERSION = "1.1.1"
     private const val API_URL =
         "https://api.github.com/repos/hutao48/genshinimpact-py.found/releases/latest"
     private const val MAX_JSON = 512 * 1024

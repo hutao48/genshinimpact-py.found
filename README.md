@@ -1,6 +1,6 @@
 # Genshin Instrument Performance Detector
 
-**Version**: Windows 1.1.0 / Android 1.1.0 | **Website**: [hutao48.github.io/genshinimpact-py.found](https://hutao48.github.io/genshinimpact-py.found/) | **Downloads**: [GitHub Releases](https://github.com/hutao48/genshinimpact-py.found/releases/latest) | [Chinese user guide (中文使用说明)](使用说明.md)
+**Version**: Windows 1.1.1 / Android 1.1.1 | **Website**: [hutao48.github.io/genshinimpact-py.found](https://hutao48.github.io/genshinimpact-py.found/) | **Downloads**: [GitHub Releases](https://github.com/hutao48/genshinimpact-py.found/releases/latest) | [Chinese user guide (中文使用说明)](使用说明.md)
 
 > The application starts in Simplified Chinese on Simplified Chinese systems, Traditional Chinese on Traditional Chinese systems, and English elsewhere. You can switch between **简体中文 / 繁體中文 / 正體中文（臺灣）/ English / 日本語** in **Settings**.
 
@@ -8,32 +8,28 @@
 
 | Platform | File | Notes |
 |---|---|---|
-| Windows | `GenshinInstrumentDetector-1.1.0-win64-setup.exe` | Installer (per-user, no administrator; Start Menu/desktop shortcuts and uninstaller) |
-| Windows | `GenshinInstrumentDetector-1.1.0-win64-portable.exe` | Portable single file; double-click to run |
-| Android | `GenshinInstrumentDetector-1.1.0-android.apk` | Android 7.0+; includes the built-in update check and fixed release signing from 1.1.0 |
+| Windows | `GenshinInstrumentDetector-1.1.1-win64-setup.exe` | Installer (per-user, no administrator; Start Menu/desktop shortcuts and uninstaller) |
+| Windows | `GenshinInstrumentDetector-1.1.1-win64-portable.exe` | Portable single file; double-click to run |
+| Android | `GenshinInstrumentDetector-1.1.1-android.apk` | Android 7.0+; includes the built-in update check and fixed release signing since 1.1.0 |
 | Checksums | `SHA256SUMS.txt` | SHA-256 for all release files |
 
 Direct links:
 
-- **Windows installer** — <https://github.com/hutao48/genshinimpact-py.found/releases/download/v1.1.0/GenshinInstrumentDetector-1.1.0-win64-setup.exe>
-- **Windows portable** — <https://github.com/hutao48/genshinimpact-py.found/releases/download/v1.1.0/GenshinInstrumentDetector-1.1.0-win64-portable.exe>
-- **Android APK** — <https://github.com/hutao48/genshinimpact-py.found/releases/download/v1.1.0/GenshinInstrumentDetector-1.1.0-android.apk>
+- **Windows installer** — <https://github.com/hutao48/genshinimpact-py.found/releases/download/v1.1.1/GenshinInstrumentDetector-1.1.1-win64-setup.exe>
+- **Windows portable** — <https://github.com/hutao48/genshinimpact-py.found/releases/download/v1.1.1/GenshinInstrumentDetector-1.1.1-win64-portable.exe>
+- **Android APK** — <https://github.com/hutao48/genshinimpact-py.found/releases/download/v1.1.1/GenshinInstrumentDetector-1.1.1-android.apk>
 
 The executables are not code-signed, so Windows SmartScreen may show "Unknown publisher"; choose **More info → Run anyway**. The APK uses a per-build debug key: uninstall the previous version before upgrading.
 
 The Windows installer is also hosted directly on the project website (`docs/downloads/`); use `docs/downloads/SHA256SUMS.txt` for that copy.
 
-## What's New in 1.1.0
+## What's New in 1.1.1
 
-- **Game-style keyboard panel**: circular cream keys with `do–ti` solfège, note glyphs and treble/alto/bass clefs, matching the in-game instrument UI. Six instrument-specific color themes; switching the instrument updates the rows, clefs, chord keys and colors immediately.
-- **Settings window** (gear button in the top bar): language, theme, update checks and an optional automatic installer.
-- **5 interface languages**: 简体中文, 繁體中文, 正體中文（臺灣）, English, 日本語. Detection results, tables, CSV exports and offline reports follow the selected language; a restart applies the change.
-- **Theme switching**: follow system, dark, or light; the keyboard, metric cards, BPM chart and tables all have matching palettes.
-- **Windows auto-update**: when enabled in Settings, a newer release is downloaded, SHA-256 verified, and its installer is run silently; otherwise the app only shows the download page.
-- **Android updates and fixed signing**: the Android app can check GitHub Releases, download and verify the new APK, then hand it to the system installer. Starting with 1.1.0, every release uses the same signing key, so later versions can be installed over the previous one.
-- **Security hardening**: signed-release requirements in CI, bounded HTTPS downloads, SHA-256 verification, INI settings (no registry), Android backup/cleartext traffic disabled.
+**This update only fixes a keyboard UI anomaly; detection and features are unchanged.**
 
-Windows 1.1.0 and Android 1.1.0 are released together.
+- Key faces now match the in-game instrument UI: cream discs with a decorative inner petal ring and a centered note glyph. The solfège labels and computer-key letters were removed from the center of the key faces; an optional “Key hints” toggle in the Keyboard header shows a small letter on the top-left of each key, or hides it for the pure 1:1 face.
+- The row clefs, staff lines, per-instrument palettes, the Ukulele chord row and the Nightwind Horn two-row layout are preserved; hovering a key still shows its computer key and note name.
+- Android 1.1.1 is a version-sync release with the same functionality as Android 1.1.0; fixed signing is unchanged.
 
 ---
 
@@ -61,7 +57,7 @@ For every performance, the app shows:
 
 ## 2. Quick Start
 
-1. Run `GenshinInstrumentDetector-1.1.0-win64-setup.exe` and launch the app from the Start Menu/desktop, or double-click the portable exe (the first launch takes about 2–5 s because the single-file build extracts itself).
+1. Run `GenshinInstrumentDetector-1.1.1-win64-setup.exe` and launch the app from the Start Menu/desktop, or double-click the portable exe (the first launch takes about 2–5 s because the single-file build extracts itself).
 2. Choose an **instrument** at the top (Windsong Lyre by default).
 3. The **capture device** is already set to "Speaker output · loopback" — it listens to everything played through the speakers, so in-game performances are captured automatically, **with no extra configuration**.
 4. Click **▶ Start listening**, then play in the game.
@@ -71,7 +67,7 @@ For every performance, the app shows:
 
 ---
 
-## 3. Settings (New in 1.1.0)
+## 3. Settings
 
 Open the gear button in the top-right corner. All options are in one dialog:
 
@@ -238,7 +234,7 @@ powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
 
 The output goes to `dist\`: `原神乐器演奏检测器.exe` (single file), `GenshinInstrumentDetector-<version>-win64-portable.exe`, and `GenshinInstrumentDetector-<version>-win64-setup.exe`.
 
-**Release**: update the version in `app_version.py` and `android_app/app/build.gradle`, then push a tag (for example, `git tag v1.1.0 && git push origin v1.1.0`). GitHub Actions builds the Windows and Android packages and creates a Release. Android release builds require the `ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD` repository Secrets; the workflow refuses to publish a debug-signed APK if they are missing.
+**Release**: update the version in `app_version.py` and `android_app/app/build.gradle`, then push a tag (for example, `git tag v1.1.1 && git push origin v1.1.1`). GitHub Actions builds the Windows and Android packages and creates a Release. Android release builds require the `ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD` repository Secrets; the workflow refuses to publish a debug-signed APK if they are missing.
 
 ---
 

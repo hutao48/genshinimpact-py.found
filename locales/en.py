@@ -234,4 +234,6 @@ EN = {
     "边界值排查：{summary}": "Boundary check: {summary}",
     "BPM 随时间（每秒读数）": "BPM over time (per-second readings)",
     "边界值排查：{time}  {title}（{level}）": "Boundary check: {time}  {title} ({level})",
+    '键位提示': 'Key hints',
+    '在琴键左上角显示电脑键盘字母，关闭后只保留游戏内键面。': 'Show the computer-key letter at the top-left of each key; turn off for the pure in-game key face.',
 }

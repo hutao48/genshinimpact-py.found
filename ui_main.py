@@ -13,11 +13,12 @@ import os
 import sys
 import time
 
-from PySide6.QtCore import Qt, QThread, Signal, QTimer, QAbstractTableModel, QModelIndex, QRectF, QSize, QUrl, QProcess, QPointF
+from PySide6.QtCore import Qt, QThread, Signal, QTimer, QAbstractTableModel, QModelIndex, QRectF, QSize, QUrl, QProcess, QPointF, QByteArray
 from PySide6.QtGui import (
     QColor, QFont, QFontDatabase, QFontMetrics, QIcon, QPainter, QPen, QBrush,
-    QLinearGradient, QDesktopServices, QPixmap,
+    QLinearGradient, QDesktopServices, QPixmap, QPainterPath, QImage,
 )
+from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QPushButton, QComboBox, QSpinBox, QSlider, QTableView, QHeaderView,
@@ -124,6 +125,7 @@ QLabel#pill[state="err"] {{ color: {c['red']}; background: {c['err_bg']}; border
 QPushButton#pillBtn {{ font-size: 12px; color: {c['dim']}; background: {c['tile']}; border: 1px solid {c['border']};
                       border-radius: 13px; padding: 4px 14px; }}
 QPushButton#pillBtn:hover {{ border-color: {c['hover_border']}; }}
+QPushButton#pillBtn:checked {{ color: {c['gold']}; background: {c['warn_bg']}; border-color: {c['warn_border']}; font-weight: 700; }}
 QPushButton#pillBtn[state="warn"] {{ color: {c['gold']}; background: {c['warn_bg']}; border-color: {c['warn_border']}; }}
 QPushButton#pillBtn[state="bad"] {{ color: {c['red']}; background: {c['err_bg']}; border-color: {c['err_border']}; }}
 QFrame#tabs {{ background: {c['input']}; border: 1px solid {c['border']}; border-radius: 9px; }}
@@ -389,7 +391,7 @@ class MetricTile(QFrame):
 
 # ================================================================ 键位面板
 KEY_STYLES = {
-    "风物之诗琴": {"accent": "#4fd1c5", "accent2": "#1f9d91", "chord": "#2f9d8f",
+    "风物之诗琴": {"accent": "#63aea7", "accent2": "#4f8f88", "chord": "#3f7f79",
                    "dark": ("#082d3d", "#0f4659"), "light": ("#dceff4", "#c3e2ec")},
     "镜花之琴": {"accent": "#c08a52", "accent2": "#8f5c32", "chord": "#a86f3c",
                  "dark": ("#102b40", "#163d55"), "light": ("#f3e6d5", "#e6d1b8")},
@@ -410,28 +412,85 @@ def _key_style(instrument_name: str) -> dict:
 
 
 def _draw_note_glyph(p: QPainter, cx: float, cy: float, r: float, degree: int, color: QColor):
-    """画一个示意性的音级符号：圆环 + 位置不同的短横/竖线（do–ti 各不相同）。"""
-    pen = QPen(color, max(1.2, r * 0.22))
+    """游戏键面的音级符号：粗圆环 + 位置不同的短横/竖线（do–ti 各不相同）。"""
+    pen = QPen(color, max(1.8, r * 0.24))
     pen.setCapStyle(Qt.PenCapStyle.RoundCap)
     p.setPen(pen)
     p.setBrush(Qt.BrushStyle.NoBrush)
-    p.drawEllipse(QRectF(cx - r * 0.72, cy - r * 0.72, r * 1.44, r * 1.44))
-    a = r * 0.92
-    b = r * 0.42
+    if degree % 7 in (3, 5):
+        # fa / la：竖向的窄环，上下横线（la 多一条底线）
+        p.drawEllipse(QRectF(cx - r * 0.56, cy - r * 0.78, r * 1.12, r * 1.56))
+    else:
+        # do/re/mi/so/la/ti：横向略宽的圆环
+        p.drawEllipse(QRectF(cx - r * 0.78, cy - r * 0.64, r * 1.56, r * 1.28))
+    a = r * 1.0
+    b = r * 0.92
     shapes = {
         0: [(cx - a, cy, cx + a, cy)],
         1: [(cx - a, cy + b, cx + a, cy + b)],
         2: [(cx - a, cy - b, cx + a, cy - b)],
-        3: [(cx, cy - a, cx, cy + a)],
-        4: [(cx - a, cy - b * 0.45, cx + a, cy - b * 0.45),
-            (cx - a, cy + b * 0.45, cx + a, cy + b * 0.45)],
-        5: [(cx - a, cy + b, cx + a, cy + b), (cx, cy - b, cx, cy + b)],
-        6: [(cx - a, cy - b * 0.62, cx + a, cy - b * 0.62),
+        3: [(cx - a, cy - b, cx + a, cy - b),
+            (cx - a, cy + b, cx + a, cy + b)],
+        4: [(cx - a, cy - b, cx + a, cy - b),
             (cx - a, cy, cx + a, cy),
-            (cx - a, cy + b * 0.62, cx + a, cy + b * 0.62)],
+            (cx - a, cy + b, cx + a, cy + b)],
+        5: [(cx - a, cy - b, cx + a, cy - b),
+            (cx - a, cy + b, cx + a, cy + b),
+            (cx - a, cy + b * 1.35, cx + a, cy + b * 1.35)],
+        6: [(cx - a, cy - b, cx + a, cy - b),
+            (cx - a, cy, cx + a, cy),
+            (cx - a, cy + b, cx + a, cy + b),
+            (cx - a, cy + b * 1.35, cx + a, cy + b * 1.35)],
     }
     for x1, y1, x2, y2 in shapes.get(degree % 7, shapes[0]):
         p.drawLine(QPointF(x1, y1), QPointF(x2, y2))
+
+
+_KEY_FACE_PIXMAP = None
+_GLYPH_PIXMAPS = {}
+
+
+def _key_face_pixmap():
+    global _KEY_FACE_PIXMAP
+    if _KEY_FACE_PIXMAP is None:
+        pm = QPixmap(_resource_path(os.path.join("ui_assets", "key_face.png")))
+        _KEY_FACE_PIXMAP = pm if not pm.isNull() else None
+    return _KEY_FACE_PIXMAP
+
+
+def _glyph_pixmap(degree: int, color: QColor):
+    """优先用游戏 UI 的字形蒙版（像素级）；SVG 矢量路径作为后备。"""
+    degree %= 7
+    key = (degree, color.name())
+    if key in _GLYPH_PIXMAPS:
+        return _GLYPH_PIXMAPS[key]
+    pix = QPixmap(_resource_path(os.path.join("ui_assets", f"glyph_{degree}.png")))
+    if pix.isNull():
+        svg_path = _resource_path(os.path.join("ui_assets", f"glyph_{degree}.svg"))
+        try:
+            with open(svg_path, "rb") as fh:
+                renderer = QSvgRenderer(QByteArray(fh.read()))
+            if renderer.isValid():
+                img = QImage(256, 256, QImage.Format.Format_ARGB32)
+                img.fill(Qt.GlobalColor.transparent)
+                pp = QPainter(img)
+                renderer.render(pp, QRectF(0, 0, 256, 256))
+                pp.end()
+                pix = QPixmap.fromImage(img)
+        except Exception:
+            pix = QPixmap()
+    if pix.isNull():
+        _GLYPH_PIXMAPS[key] = None
+        return None
+    tinted = QPixmap(pix.size())
+    tinted.fill(Qt.GlobalColor.transparent)
+    pp = QPainter(tinted)
+    pp.drawPixmap(0, 0, pix)
+    pp.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+    pp.fillRect(tinted.rect(), color)
+    pp.end()
+    _GLYPH_PIXMAPS[key] = tinted
+    return tinted
 
 
 class RowIcon(QWidget):
@@ -481,6 +540,7 @@ class KeyTile(QWidget):
         self.letter, self.role, self.style = letter, role, style
         self.solfege, self.chord, self.note, self.degree = solfege, chord, note, degree
         self.active = False
+        self.show_hint = True
         self.setToolTip(tip)
         self.setMinimumSize(36, 36)
         self.setMaximumSize(140, 140)
@@ -497,7 +557,7 @@ class KeyTile(QWidget):
     def paintEvent(self, e):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        side = min(self.width(), self.height()) - 6
+        side = min(self.width(), self.height()) - 2
         if side < 18:
             p.end()
             return
@@ -505,42 +565,19 @@ class KeyTile(QWidget):
         r = side / 2.0
         accent = QColor(self.style["accent"])
         accent2 = QColor(self.style["accent2"])
-        chord_color = QColor(self.style.get("chord", accent2))
-        cream = QColor("#f8f1db") if THEME_EFFECTIVE == "dark" else QColor("#fffaf0")
-
-        if self.active:
-            glow = QColor(accent)
-            glow.setAlpha(60)
-            p.setPen(QPen(glow, max(3.0, side * 0.10)))
-            p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawEllipse(QRectF(cx - r + 2, cy - r + 2, side - 4, side - 4))
-            grad = QLinearGradient(cx, cy - r, cx, cy + r)
-            grad.setColorAt(0.0, accent.lighter(112))
-            grad.setColorAt(1.0, accent2)
-            p.setBrush(grad)
-            p.setPen(QPen(QColor(255, 255, 255, 150), max(1.0, side * 0.014)))
-        elif self.role == "chord":
-            # 和弦键在游戏内是蓝色圆盘；未按下也保持蓝底，按下时更亮
-            p.setBrush(QColor("#24466f") if THEME_EFFECTIVE == "dark" else QColor("#dce9fb"))
-            p.setPen(QPen(QColor(accent.red(), accent.green(), accent.blue(), 130), 1))
-        else:
-            p.setBrush(cream)
-            p.setPen(QPen(QColor(0, 0, 0, 38 if THEME_EFFECTIVE == "dark" else 26), 1))
-        p.drawEllipse(QRectF(cx - r, cy - r, side, side))
-
-        ring = QColor(255, 255, 255, 95) if self.active else QColor(accent)
-        ring.setAlpha(70 if self.active else 50)
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        p.setPen(QPen(ring, 1))
-        p.drawEllipse(QRectF(cx - r * 0.84, cy - r * 0.84, side * 0.84, side * 0.84))
-
-        if self.active:
-            fg = cream
-        elif self.role == "chord":
-            fg = cream if THEME_EFFECTIVE == "dark" else accent2
-        else:
-            fg = accent
+        cream = QColor("#fff9ef")
         if self.role == "chord":
+            fg = cream if THEME_EFFECTIVE == "dark" else accent2
+            if self.active:
+                grad = QLinearGradient(cx, cy - r, cx, cy + r)
+                grad.setColorAt(0.0, accent.lighter(112))
+                grad.setColorAt(1.0, accent2)
+                p.setBrush(grad)
+                p.setPen(QPen(QColor(255, 255, 255, 150), max(1.0, side * 0.014)))
+            else:
+                p.setBrush(QColor("#24466f") if THEME_EFFECTIVE == "dark" else QColor("#dce9fb"))
+                p.setPen(QPen(QColor(accent.red(), accent.green(), accent.blue(), 130), 1))
+            p.drawEllipse(QRectF(cx - r, cy - r, side, side))
             f = QFont(UI_FONT)
             f.setPixelSize(max(10, int(side * 0.25)))
             f.setBold(True)
@@ -553,26 +590,60 @@ class KeyTile(QWidget):
             p.setFont(f2)
             p.drawText(QRectF(cx - r, cy + side * 0.10, side, side * 0.24),
                        Qt.AlignmentFlag.AlignCenter, self.letter)
+            p.end()
+            return
+
+        # 游戏内键面来自 1:1 截取：奶油盘、米色花瓣环、居中的音级字形
+        if self.active:
+            glow = QColor(accent)
+            glow.setAlpha(60)
+            p.setPen(QPen(glow, max(3.0, side * 0.10)))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawEllipse(QRectF(cx - r + 2, cy - r + 2, side - 4, side - 4))
+        face = _key_face_pixmap()
+        if face is not None:
+            p.drawPixmap(QRectF(cx - r, cy - r, side, side), face,
+                         QRectF(0, 0, face.width(), face.height()))
         else:
-            _draw_note_glyph(p, cx, cy - side * 0.13, side * 0.15, self.degree, fg)
-            f = QFont(UI_FONT)
-            f.setPixelSize(max(9, int(side * 0.155)))
-            f.setWeight(QFont.Weight.DemiBold)
-            p.setFont(f)
-            p.setPen(fg)
-            p.drawText(QRectF(cx - r, cy + side * 0.12, side, side * 0.22),
-                       Qt.AlignmentFlag.AlignCenter, self.solfege)
-            # 电脑键盘键位：小圆角标签，保留音频检测与键盘位置的对应关系
-            br = side * 0.115
-            bx, by = cx - r * 0.62, cy - r * 0.62
-            badge = cream if self.active else QColor(255, 255, 255, 215)
-            p.setBrush(badge)
-            p.setPen(QPen(accent2 if not self.active else QColor(cream), max(0.8, side * 0.012)))
+            p.setBrush(cream)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawEllipse(QRectF(cx - r, cy - r, side, side))
+        if self.active:
+            p.setBrush(QColor(accent.red(), accent.green(), accent.blue(), 34))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawEllipse(QRectF(cx - r, cy - r, side, side))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(accent, max(2.0, side * 0.045)))
+            p.drawEllipse(QRectF(cx - r + 2, cy - r + 2, side - 4, side - 4))
+            fg = accent2
+        else:
+            fg = accent
+        glyph = _glyph_pixmap(self.degree, fg)
+        if glyph is not None:
+            box = side * (110.0 / 154.0)
+            p.drawPixmap(QRectF(cx - box / 2.0, cy - box / 2.0, box, box), glyph,
+                         QRectF(0, 0, glyph.width(), glyph.height()))
+        else:
+            _draw_note_glyph(p, cx, cy, side * 0.280, self.degree, fg)
+        # 键位提示：小标签放在左上角的花边上，不遮挡音级符号
+        if self.role != "chord" and self.show_hint and side >= 52:
+            br = max(7.0, side * 0.105)
+            bx, by = cx - r * 0.72, cy - r * 0.72
+            if self.active:
+                p.setBrush(cream)
+                p.setPen(QPen(accent2, 1))
+                p.setPen(Qt.PenStyle.NoPen)
+                letter_color = accent2
+            else:
+                p.setBrush(QColor(37, 47, 48, 215))
+                p.setPen(Qt.PenStyle.NoPen)
+                letter_color = cream
             p.drawEllipse(QPointF(bx, by), br, br)
             f2 = QFont(NUM_FONT)
-            f2.setPixelSize(max(6, int(br * 1.25)))
+            f2.setPixelSize(max(8, int(br * 1.12)))
+            f2.setBold(True)
             p.setFont(f2)
-            p.setPen(accent2)
+            p.setPen(letter_color)
             p.drawText(QRectF(bx - br, by - br, br * 2, br * 2),
                        Qt.AlignmentFlag.AlignCenter, self.letter)
         p.end()
@@ -586,6 +657,7 @@ class KeyPanel(QWidget):
         self.inst = None
         self.style = KEY_STYLE_DEFAULT
         self._rows = 0
+        self.show_hints = True
         self.grid = QGridLayout(self)
         self.grid.setHorizontalSpacing(4)
         self.grid.setVerticalSpacing(0)
@@ -627,6 +699,27 @@ class KeyPanel(QWidget):
             p.drawEllipse(QPointF(self.width() * fx, self.height() * fy), 1.4, 1.4)
         p.end()
 
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._fit_grid()
+
+    def _fit_grid(self):
+        """让键面按游戏内的方形格子居中：横向留白，而不是把圆键拉成大间隙。"""
+        if not self._rows or self.width() < 80 or self.height() < 40:
+            return
+        row_h = max(24.0, (self.height() - 8.0) / self._rows)
+        cell = row_h / 0.90
+        keys_w = 7.0 * cell
+        icon_w = 46.0
+        margin = max(4, int((self.width() - icon_w - keys_w) / 2.0))
+        self.grid.setContentsMargins(margin, 4, margin, 4)
+
+    def set_hints(self, on):
+        self.show_hints = bool(on)
+        for tile in self.buttons.values():
+            tile.show_hint = self.show_hints
+            tile.update()
+
     def set_instrument(self, inst):
         self.inst = inst
         self.style = _key_style(inst.name)
@@ -656,6 +749,7 @@ class KeyPanel(QWidget):
                     ("alto", "ASDFGHJ", T("中音")),
                     ("bass", "ZXCVBNM", T("低音"))]
         self._rows = len(rows)
+        self._fit_grid()
         for r, (role, letters, label) in enumerate(rows):
             icon = RowIcon(role, self.style, label)
             self.grid.addWidget(icon, r, 0)
@@ -675,6 +769,7 @@ class KeyPanel(QWidget):
                     tile = KeyTile(ch, "pitch", self.style,
                                    tip=T("键 {key} = {note}", key=ch, note=note),
                                    solfege=sol or note, note=note, degree=degree)
+                tile.show_hint = self.show_hints
                 self.grid.addWidget(tile, r, c + 1)
                 self.buttons[ch] = tile
             self.grid.setRowStretch(r, 1)
@@ -1273,7 +1368,7 @@ class MainWindow(QMainWindow):
             # 首次显示时按实际高度分配三块区域：琴键/指标 30%、BPM 图 30%、时长表 40%
             self._split_init = True
             h = max(300, self.split.height())
-            self.split.setSizes([int(h * 0.40), int(h * 0.27), int(h * 0.33)])
+            self.split.setSizes([int(h * 0.44), int(h * 0.25), int(h * 0.31)])
 
     def _fit_to_screen(self):
         self.setMinimumSize(1000, 700)
@@ -1406,9 +1501,16 @@ class MainWindow(QMainWindow):
         tr.setContentsMargins(0, 0, 0, 0)
         tr.setSpacing(10)
         keys_card = Card(T("琴键"), T("高亮 = 正在发音"))
+        self.btn_hints = QPushButton(T("键位提示"))
+        self.btn_hints.setObjectName("pillBtn")
+        self.btn_hints.setCheckable(True)
+        self.btn_hints.setChecked(True)
+        self.btn_hints.setToolTip(T("在琴键左上角显示电脑键盘字母，关闭后只保留游戏内键面。"))
+        self.btn_hints.toggled.connect(lambda on: self.key_panel.set_hints(on))
+        keys_card.head.addWidget(self.btn_hints)
         keys_card.body.setContentsMargins(10, 6, 10, 8)
         self.key_panel = KeyPanel()
-        self.key_panel.setMinimumHeight(130)
+        self.key_panel.setMinimumHeight(150)
         keys_card.body.addWidget(self.key_panel, 1)
         tr.addWidget(keys_card, 3)
 
