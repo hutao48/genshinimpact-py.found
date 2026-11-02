@@ -41,7 +41,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             val title = TextView(this).apply {
-                text = "原神乐器演奏检测器 v1.0.2"
+                text = "原神乐器演奏检测器 v1.0.3"
                 setTextColor(0xFFE8E8E8.toInt())
                 textSize = 20f
                 setPadding(0, 0, 0, 24)
@@ -109,6 +109,8 @@ class MainActivity : AppCompatActivity() {
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), 1)
+            btnStart.isChecked = false
+            txtStatus.text = "未获得麦克风权限"
             return
         }
         recording = true
@@ -129,6 +131,14 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 Log.i("GenshinDetector", "Using rate=$bestRate buf=$bestBuf")
+                if (bestRate == 0 || bestBuf <= 0) {
+                    recording = false
+                    runOnUiThread {
+                        btnStart.isChecked = false
+                        txtStatus.text = "无法初始化音频采集"
+                    }
+                    return@Thread
+                }
 
                 rec = AudioRecord(MediaRecorder.AudioSource.MIC, bestRate,
                     AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bestBuf)
@@ -161,9 +171,42 @@ class MainActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Log.e("GenshinDetector", "recording error", e)
                 rec?.release()
+                recording = false
+                runOnUiThread {
+                    btnStart.isChecked = false
+                    txtStatus.text = "采集出错，请重试"
+                }
             }
         }
         recordThread?.start()
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 1 && (grantResults.isEmpty() || grantResults[0] != PackageManager.PERMISSION_GRANTED)) {
+            btnStart.isChecked = false
+            txtStatus.text = "未获得麦克风权限"
+        }
+    }
+
+    override fun onPause() {
+        if (recording) {
+            stopRecording()
+            btnStart.isChecked = false
+            txtStatus.text = "已暂停"
+        }
+        super.onPause()
+    }
+
+    override fun onDestroy() {
+        recording = false
+        recordThread?.join(1000)
+        recordThread = null
+        super.onDestroy()
     }
 
     private fun stopRecording() {

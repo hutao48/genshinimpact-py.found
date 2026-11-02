@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Genshin Instrument Detector — see every key, hear every note</title>
+<meta name="description" content="Real-time Genshin Impact instrument detector for Windows and Android: keys, chords, key, per-note duration and BPM, with five UI languages, dark/light themes and update checks.">
+<link rel="icon" href="assets/app.ico">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="nav">
+  <a class="brand" href="#top">
+    <img src="assets/app.ico" alt="" width="28" height="28">
+    <span>Genshin Instrument Detector</span>
+  </a>
+  <nav>
+    <a href="#features">Features</a>
+    <a href="#downloads">Downloads</a>
+    <a href="#security">Security</a>
+    <a class="gh" href="https://github.com/hutao48/genshinimpact-py.found" target="_blank" rel="noopener">GitHub ↗</a>
+  </nav>
+</header>
+
+<main id="top">
+  <section class="hero">
+    <div class="hero-copy">
+      <p class="eyebrow">Windows 1.0.4 · Android 1.0.3</p>
+      <h1>Hear every note.<br><span>See every key.</span></h1>
+      <p class="lede">A real-time detector for the six playable instruments in <em>Genshin Impact</em>.
+        It listens to your speakers (or microphone), shows the keys and chords being played,
+        and measures the key, note durations and BPM as you perform.</p>
+      <div class="cta">
+        <a class="btn primary" href="https://github.com/hutao48/genshinimpact-py.found/releases/download/v1.0.4/GenshinInstrumentDetector-1.0.4-win64-setup.exe">Download for Windows</a>
+        <a class="btn" href="https://github.com/hutao48/genshinimpact-py.found/releases/download/v1.0.4/GenshinInstrumentDetector-1.0.3-android.apk">Android APK</a>
+      </div>
+      <p class="fine">Free · No telemetry · <a href="https://github.com/hutao48/genshinimpact-py.found" target="_blank" rel="noopener">Open source on GitHub</a></p>
+    </div>
+    <figure class="shot">
+      <img src="assets/hero-dark.png" alt="The detector running with a dark theme, showing the keyboard, live metrics, BPM chart and note-duration table">
+    </figure>
+  </section>
+
+  <section class="features" id="features">
+    <div class="section-head">
+      <p class="eyebrow">What it does</p>
+      <h2>Everything you play, measured.</h2>
+    </div>
+    <div class="grid">
+      <article class="feature">
+        <span class="num">01</span>
+        <h3>Six instruments</h3>
+        <p>Windsong Lyre, Floral Zither, Vintage Lyre, Harmonic Keys, Nightwind Horn and Ukulele — with the correct 21/14/12-key layouts.</p>
+      </article>
+      <article class="feature">
+        <span class="num">02</span>
+        <h3>Notes, chords, key</h3>
+        <p>Highlights the keys currently held, names the chord (C, Dm, Em, F, G, Am, G7 …) and estimates the key with a confidence value.</p>
+      </article>
+      <article class="feature">
+        <span class="num">03</span>
+        <h3>Millisecond durations</h3>
+        <p>Every note gets an onset-aligned start time, duration, gap and end reason (key release/cutoff, same-key re-press or natural decay).</p>
+      </article>
+      <article class="feature">
+        <span class="num">04</span>
+        <h3>BPM that follows you</h3>
+        <p>A scrolling BPM history with auto-scaling axis, 30 s / 1 min / 5 min / all ranges, and hover readouts. It catches tempo changes in about 1–1.5 s.</p>
+      </article>
+      <article class="feature">
+        <span class="num">05</span>
+        <h3>Boundary check</h3>
+        <p>Flags evidence of operations beyond human limits: more than 10 keys at once, or a very long run of perfectly even gaps.</p>
+      </article>
+      <article class="feature">
+        <span class="num">06</span>
+        <h3>Offline analysis</h3>
+        <p>Analyze a WAV recording from the command line and get the full report, including per-second BPM readings.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="split">
+    <div class="split-copy">
+      <p class="eyebrow">New in 1.0.4</p>
+      <h2>A Settings window that feels native.</h2>
+      <p>Switch between <strong>简体中文</strong>, <strong>繁體中文</strong>, <strong>正體中文（臺灣）</strong>,
+        <strong>English</strong> and <strong>日本語</strong>; pick a dark, light or system theme;
+        and check for updates without leaving the app.</p>
+      <ul class="checks">
+        <li>Five UI languages, including analysis results, CSV exports and offline reports</li>
+        <li>Follow system / dark / light themes with matching keyboard, chart and table colors</li>
+        <li>GitHub Releases update check — never downloads or runs files automatically</li>
+        <li>Settings stored in a local INI file; no registry writes</li>
+      </ul>
+    </div>
+    <figure class="shot small">
+      <img src="assets/settings-dark.png" alt="The Settings window showing language, theme, update and about sections">
+    </figure>
+  </section>
+
+  <section class="showcase">
+    <figure class="shot"><img src="assets/hero-light.png" alt="The detector with a light theme"></figure>
+    <figure class="shot"><img src="assets/hero-ja.png" alt="The detector with the Japanese interface"></figure>
+  </section>
+
+  <section class="downloads" id="downloads">
+    <div class="section-head">
+      <p class="eyebrow">Get the app</p>
+      <h2>Download</h2>
+      <p class="sub">Choose your platform. All files are hosted on GitHub Releases.</p>
+    </div>
+    <div class="grid two">
+      <article class="card">
+        <div class="card-head">
+          <h3>Windows</h3>
+          <span class="badge">1.0.4</span>
+        </div>
+        <p>Windows 10/11, 64-bit. The installer is per-user and needs no administrator rights.</p>
+        <a class="dl" href="https://github.com/hutao48/genshinimpact-py.found/releases/download/v1.0.4/GenshinInstrumentDetector-1.0.4-win64-setup.exe">
+          <span>Installer</span><code>GenshinInstrumentDetector-1.0.4-win64-setup.exe</code>
+        </a>
+        <a class="dl" href="https://github.com/hutao48/genshinimpact-py.found/releases/download/v1.0.4/GenshinInstrumentDetector-1.0.4-win64-portable.exe">
+          <span>Portable</span><code>GenshinInstrumentDetector-1.0.4-win64-portable.exe</code>
+        </a>
+        <p class="meta">The exe is unsigned; SmartScreen may ask you to choose “More info → Run anyway”.</p>
+      </article>
+      <article class="card">
+        <div class="card-head">
+          <h3>Android</h3>
+          <span class="badge">1.0.3</span>
+        </div>
+        <p>Android 7.0 and newer. This build is a version/security update; the desktop Settings features are Windows-only.</p>
+        <a class="dl" href="https://github.com/hutao48/genshinimpact-py.found/releases/download/v1.0.4/GenshinInstrumentDetector-1.0.3-android.apk">
+          <span>APK</span><code>GenshinInstrumentDetector-1.0.3-android.apk</code>
+        </a>
+        <p class="meta">Each build uses a different signing key — uninstall the previous version before upgrading.</p>
+      </article>
+    </div>
+    <p class="download-links">
+      <a href="https://github.com/hutao48/genshinimpact-py.found/releases/download/v1.0.4/SHA256SUMS.txt">SHA-256 checksums</a>
+      <span>·</span>
+      <a href="https://github.com/hutao48/genshinimpact-py.found/releases/tag/v1.0.4">Release notes</a>
+      <span>·</span>
+      <a href="https://github.com/hutao48/genshinimpact-py.found/releases/latest">All releases</a>
+    </p>
+  </section>
+
+  <section class="security" id="security">
+    <div class="section-head">
+      <p class="eyebrow">Privacy &amp; security</p>
+      <h2>Local by default.</h2>
+    </div>
+    <div class="grid">
+      <article class="feature">
+        <span class="num">A</span>
+        <h3>No telemetry</h3>
+        <p>Audio never leaves your computer. There is no analytics, account or cloud processing.</p>
+      </article>
+      <article class="feature">
+        <span class="num">B</span>
+        <h3>Bounded update check</h3>
+        <p>The only network request is an optional HTTPS query to GitHub Releases with a 12 s timeout and a 512 KB response cap.</p>
+      </article>
+      <article class="feature">
+        <span class="num">C</span>
+        <h3>No auto-execution</h3>
+        <p>An update is never downloaded or launched by the app. It only opens the validated GitHub release page.</p>
+      </article>
+      <article class="feature">
+        <span class="num">D</span>
+        <h3>Local settings</h3>
+        <p>Language, theme and update preferences live in <code>%LOCALAPPDATA%\GenshinInstrumentDetector\settings.ini</code>.</p>
+      </article>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div>
+    <strong>Genshin Instrument Detector</strong>
+    <p>Independent fan tool. Not affiliated with HoYoverse. Genshin Impact is a trademark of HoYoverse.</p>
+  </div>
+  <div class="footer-links">
+    <a href="https://github.com/hutao48/genshinimpact-py.found">GitHub</a>
+    <a href="https://github.com/hutao48/genshinimpact-py.found/releases">Releases</a>
+    <a href="https://github.com/hutao48/genshinimpact-py.found/blob/main/SECURITY.md">Security</a>
+    <a href="https://github.com/hutao48/genshinimpact-py.found/blob/main/使用说明.md">中文使用说明</a>
+  </div>
+</footer>
+</body>
+</html>

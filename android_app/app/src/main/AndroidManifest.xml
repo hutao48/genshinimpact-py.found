@@ -6,7 +6,8 @@
         android:label="原神乐器检测器"
         android:icon="@drawable/ic_launcher"
         android:theme="@style/AppTheme"
-        android:allowBackup="true">
+        android:allowBackup="false"
+        android:usesCleartextTraffic="false">
         <activity android:name=".MainActivity" android:exported="true" android:configChanges="orientation|screenSize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

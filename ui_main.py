@@ -13,21 +13,31 @@ import os
 import sys
 import time
 
-from PySide6.QtCore import Qt, QThread, Signal, QTimer, QAbstractTableModel, QModelIndex, QRectF, QSize
-from PySide6.QtGui import QColor, QFont, QFontDatabase, QFontMetrics, QIcon, QPainter, QPen, QBrush, QLinearGradient
+from PySide6.QtCore import Qt, QThread, Signal, QTimer, QAbstractTableModel, QModelIndex, QRectF, QSize, QUrl, QProcess
+from PySide6.QtGui import (
+    QColor, QFont, QFontDatabase, QFontMetrics, QIcon, QPainter, QPen, QBrush,
+    QLinearGradient, QDesktopServices, QPixmap,
+)
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QPushButton, QComboBox, QSpinBox, QSlider, QTableView, QHeaderView,
-    QFrame, QSplitter, QMessageBox, QSizePolicy, QButtonGroup, QFileDialog, QAbstractItemView, QStackedWidget,
+    QFrame, QSplitter, QMessageBox, QSizePolicy, QButtonGroup, QFileDialog,
+    QAbstractItemView, QStackedWidget, QDialog, QGroupBox, QCheckBox,
 )
 
 import pyqtgraph as pg
 
+import settings
+import i18n
+from i18n import T
+from updater import UpdateChecker, valid_release_url
 from instruments import all_instruments, midi_to_name
-from detection import NoteDetector, END_REASON_TEXT
-from screening import Screener, LEVEL_LIMIT, LEVEL_SUSPECT, LEVEL_TEXT, KIND_TEXT
+from detection import NoteDetector, end_reason_text
+from screening import (
+    Screener, LEVEL_LIMIT, LEVEL_SUSPECT, level_text, kind_text,
+)
 from audio_capture import AudioCapture, list_sources, default_loopback_id
-from app_version import APP_NAME, APP_VERSION
+from app_version import APP_NAME, APP_VERSION, APP_URL, APP_REPO
 import diag
 
 
@@ -40,11 +50,46 @@ def _resource_path(name):
 
 
 # ---------------------------------------------------------------- 主题
-C = {
-    "bg": "#0f1116", "card": "#161921", "tile": "#1b1f29", "border": "#252a36", "border_hi": "#333a4a",
-    "input": "#12151c", "text": "#e8eaf0", "dim": "#8b93a7", "faint": "#5d6478",
-    "gold": "#f6b73c", "cyan": "#4cc9f0", "green": "#34d399", "violet": "#a78bfa", "red": "#f87171",
+# 两套配色；C 在运行期原地更新，所有绘制代码都读同一个 dict
+PALETTES = {
+    "dark": {
+        "bg": "#0f1116", "card": "#161921", "tile": "#1b1f29", "border": "#252a36",
+        "border_hi": "#333a4a", "input": "#12151c", "text": "#e8eaf0", "dim": "#8b93a7",
+        "faint": "#5d6478", "gold": "#f6b73c", "cyan": "#4cc9f0", "green": "#34d399",
+        "violet": "#a78bfa", "red": "#f87171",
+        "btn_hover": "#232836", "btn_pressed": "#181c25", "hover_border": "#46506a",
+        "seg_active": "#262c3a", "menu_sel": "#2b3242", "slider_groove": "#2a3040",
+        "slider_handle": "#ffffff", "slider_handle_border": "#ffffff",
+        "row_alt": "#1a1d26", "sel_bg": "#243049", "scroll": "#2c3342", "scroll_hover": "#3b4457",
+        "primary_hover": "#ffc75a", "primary_text": "#1d1505", "danger_hover": "#fb8a8a",
+        "ok_bg": "rgba(52, 211, 153, 28)", "ok_border": "rgba(52, 211, 153, 90)",
+        "err_bg": "rgba(248, 113, 113, 28)", "err_border": "rgba(248, 113, 113, 100)",
+        "warn_bg": "rgba(246, 183, 60, 26)", "warn_border": "rgba(246, 183, 60, 90)",
+        "key_bg": "#1c212c", "key_border": "#2a3142", "key_fg": "#e3e6ee", "key_sub": "#7c859b",
+        "chord_bg": "#152824", "chord_border": "#24473c", "chord_fg": "#bfe9da",
+        "chord_sub": "#6fae98",
+    },
+    "light": {
+        "bg": "#f3f5f9", "card": "#ffffff", "tile": "#f7f8fb", "border": "#e1e5ee",
+        "border_hi": "#c9d0dd", "input": "#ffffff", "text": "#1b1f27", "dim": "#5b6475",
+        "faint": "#858d9e", "gold": "#c8870f", "cyan": "#0b7fa5", "green": "#0f9d6e",
+        "violet": "#7656d6", "red": "#d64545",
+        "btn_hover": "#eef1f7", "btn_pressed": "#e6eaf2", "hover_border": "#9aa6bd",
+        "seg_active": "#e9edf4", "menu_sel": "#e6eefb", "slider_groove": "#d8dee9",
+        "slider_handle": "#ffffff", "slider_handle_border": "#aab3c5",
+        "row_alt": "#f8f9fc", "sel_bg": "#e3ebfa", "scroll": "#c9d2e3", "scroll_hover": "#aeb9ce",
+        "primary_hover": "#e0a52e", "primary_text": "#1d1505", "danger_hover": "#e46b6b",
+        "ok_bg": "rgba(15, 157, 110, 20)", "ok_border": "rgba(15, 157, 110, 90)",
+        "err_bg": "rgba(214, 69, 69, 18)", "err_border": "rgba(214, 69, 69, 90)",
+        "warn_bg": "rgba(200, 135, 15, 20)", "warn_border": "rgba(200, 135, 15, 80)",
+        "key_bg": "#ffffff", "key_border": "#d7dce6", "key_fg": "#20242c", "key_sub": "#6b7385",
+        "chord_bg": "#e9f7f2", "chord_border": "#b7e3d5", "chord_fg": "#0f513f",
+        "chord_sub": "#3f7f6d",
+    },
 }
+C = dict(PALETTES["dark"])
+THEME_MODE = "system"
+_APP = None
 UI_FONT = "Microsoft YaHei UI"      # apply_theme() 里按系统已安装字体确定
 NUM_FONT = "Segoe UI"               # 数字字体：优先 Bahnschrift（Windows 10+ 自带）
 
@@ -72,61 +117,70 @@ QLabel#chip {{ font-size: 12px; color: {c['dim']}; background: {c['input']}; bor
                border-radius: 8px; padding: 3px 10px; }}
 QLabel#pill {{ font-size: 12px; color: {c['dim']}; background: {c['tile']}; border: 1px solid {c['border']};
                border-radius: 13px; padding: 4px 14px; }}
-QLabel#pill[state="on"] {{ color: {c['green']}; background: rgba(52, 211, 153, 28); border-color: rgba(52, 211, 153, 90); }}
-QLabel#pill[state="err"] {{ color: {c['red']}; background: rgba(248, 113, 113, 28); border-color: rgba(248, 113, 113, 90); }}
+QLabel#pill[state="on"] {{ color: {c['green']}; background: {c['ok_bg']}; border-color: {c['ok_border']}; }}
+QLabel#pill[state="err"] {{ color: {c['red']}; background: {c['err_bg']}; border-color: {c['err_border']}; }}
 QPushButton#pillBtn {{ font-size: 12px; color: {c['dim']}; background: {c['tile']}; border: 1px solid {c['border']};
                       border-radius: 13px; padding: 4px 14px; }}
-QPushButton#pillBtn:hover {{ border-color: #46506a; }}
-QPushButton#pillBtn[state="warn"] {{ color: {c['gold']}; background: rgba(246, 183, 60, 26); border-color: rgba(246, 183, 60, 90); }}
-QPushButton#pillBtn[state="bad"] {{ color: {c['red']}; background: rgba(248, 113, 113, 28); border-color: rgba(248, 113, 113, 100); }}
+QPushButton#pillBtn:hover {{ border-color: {c['hover_border']}; }}
+QPushButton#pillBtn[state="warn"] {{ color: {c['gold']}; background: {c['warn_bg']}; border-color: {c['warn_border']}; }}
+QPushButton#pillBtn[state="bad"] {{ color: {c['red']}; background: {c['err_bg']}; border-color: {c['err_border']}; }}
 QFrame#tabs {{ background: {c['input']}; border: 1px solid {c['border']}; border-radius: 9px; }}
 QFrame#tabs QPushButton {{ background: transparent; border: none; border-radius: 7px; padding: 5px 14px;
                            color: {c['dim']}; font-size: 13px; font-weight: 600; }}
 QFrame#tabs QPushButton:hover {{ color: {c['text']}; }}
-QFrame#tabs QPushButton:checked {{ background: #262c3a; color: {c['text']}; }}
+QFrame#tabs QPushButton:checked {{ background: {c['seg_active']}; color: {c['text']}; }}
 QLabel#screenSummary {{ font-size: 12px; color: {c['dim']}; background: {c['tile']}; border: 1px solid {c['border']};
                         border-radius: 8px; padding: 8px 12px; }}
 QPushButton {{ background: {c['tile']}; color: {c['text']}; border: 1px solid {c['border_hi']}; border-radius: 8px;
                padding: 7px 16px; font-size: 13px; }}
-QPushButton:hover {{ background: #232836; border-color: #46506a; }}
-QPushButton:pressed {{ background: #181c25; }}
+QPushButton:hover {{ background: {c['btn_hover']}; border-color: {c['hover_border']}; }}
+QPushButton:pressed {{ background: {c['btn_pressed']}; }}
 QPushButton:disabled {{ color: {c['faint']}; }}
-QPushButton#primary {{ background: {c['gold']}; color: #1d1505; border: none; font-weight: 700; padding: 8px 22px; }}
-QPushButton#primary:hover {{ background: #ffc75a; }}
+QPushButton#primary {{ background: {c['gold']}; color: {c['primary_text']}; border: none; font-weight: 700; padding: 8px 22px; }}
+QPushButton#primary:hover {{ background: {c['primary_hover']}; }}
 QPushButton#primary:checked {{ background: {c['red']}; color: #ffffff; }}
-QPushButton#primary:checked:hover {{ background: #fb8a8a; }}
+QPushButton#primary:checked:hover {{ background: {c['danger_hover']}; }}
 QFrame#seg {{ background: {c['input']}; border: 1px solid {c['border']}; border-radius: 8px; }}
 QFrame#seg QPushButton {{ background: transparent; border: none; border-radius: 6px; padding: 4px 12px;
                           color: {c['dim']}; font-size: 12px; }}
 QFrame#seg QPushButton:hover {{ color: {c['text']}; }}
-QFrame#seg QPushButton:checked {{ background: #262c3a; color: {c['gold']}; font-weight: 600; }}
-QComboBox, QSpinBox {{ background: {c['input']}; border: 1px solid {c['border_hi']}; border-radius: 8px;
+QFrame#seg QPushButton:checked {{ background: {c['seg_active']}; color: {c['gold']}; font-weight: 600; }}
+QComboBox, QSpinBox, QLineEdit {{ background: {c['input']}; border: 1px solid {c['border_hi']}; border-radius: 8px;
                        padding: 5px 10px; min-height: 20px; font-size: 13px; }}
-QComboBox:hover, QSpinBox:hover {{ border-color: #46506a; }}
+QComboBox:hover, QSpinBox:hover, QLineEdit:hover {{ border-color: {c['hover_border']}; }}
 QComboBox::drop-down {{ border: none; width: 24px; }}
 QComboBox QAbstractItemView {{ background: {c['tile']}; border: 1px solid {c['border_hi']}; padding: 4px;
-                               selection-background-color: #2b3242; outline: none; }}
+                               selection-background-color: {c['menu_sel']}; outline: none; }}
 QSpinBox::up-button, QSpinBox::down-button {{ border: none; background: transparent; width: 16px; }}
-QSlider::groove:horizontal {{ height: 4px; background: #2a3040; border-radius: 2px; }}
+QSlider::groove:horizontal {{ height: 4px; background: {c['slider_groove']}; border-radius: 2px; }}
 QSlider::sub-page:horizontal {{ background: {c['gold']}; border-radius: 2px; }}
-QSlider::handle:horizontal {{ background: #ffffff; width: 14px; height: 14px; margin: -5px 0; border-radius: 7px; }}
+QSlider::handle:horizontal {{ background: {c['slider_handle']}; border: 1px solid {c['slider_handle_border']};
+                              width: 14px; height: 14px; margin: -5px 0; border-radius: 7px; }}
 QTableView {{ background: transparent; border: none; gridline-color: transparent; outline: none;
-              alternate-background-color: #1a1d26; selection-background-color: #243049;
+              alternate-background-color: {c['row_alt']}; selection-background-color: {c['sel_bg']};
               selection-color: {c['text']}; font-size: 13px; }}
 QTableView::item {{ padding: 0 10px; border: none; }}
 QHeaderView {{ background: transparent; }}
 QHeaderView::section {{ background: transparent; color: {c['faint']}; border: none;
                         border-bottom: 1px solid {c['border']}; padding: 6px 10px; font-size: 12px; font-weight: 600; }}
 QScrollBar:vertical {{ background: transparent; width: 10px; margin: 2px; }}
-QScrollBar::handle:vertical {{ background: #2c3342; border-radius: 4px; min-height: 32px; }}
-QScrollBar::handle:vertical:hover {{ background: #3b4457; }}
+QScrollBar::handle:vertical {{ background: {c['scroll']}; border-radius: 4px; min-height: 32px; }}
+QScrollBar::handle:vertical:hover {{ background: {c['scroll_hover']}; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
 QSplitter::handle:vertical {{ height: 10px; background: transparent; }}
 QStatusBar {{ background: {c['bg']}; color: {c['faint']}; font-size: 12px; }}
 QStatusBar::item {{ border: none; }}
 QToolTip {{ background: {c['tile']}; color: {c['text']}; border: 1px solid {c['border_hi']}; padding: 6px 8px; }}
-QMessageBox, QFileDialog {{ background: {c['card']}; }}
+QMessageBox, QFileDialog, QDialog {{ background: {c['card']}; }}
+QGroupBox {{ border: 1px solid {c['border']}; border-radius: 10px; margin-top: 16px; padding: 12px;
+             font-size: 13px; font-weight: 600; }}
+QGroupBox::title {{ subcontrol-origin: margin; left: 12px; padding: 0 5px; color: {c['dim']}; }}
+QGroupBox QLabel {{ font-weight: 400; }}
+QCheckBox {{ color: {c['text']}; font-size: 13px; spacing: 8px; }}
+QCheckBox::indicator {{ width: 16px; height: 16px; border: 1px solid {c['border_hi']}; border-radius: 4px;
+                        background: {c['input']}; }}
+QCheckBox::indicator:checked {{ background: {c['gold']}; border-color: {c['gold']}; }}
 """
 
 
@@ -138,16 +192,64 @@ def _pick_font(cands):
     return cands[-1]
 
 
-def apply_theme(app):
-    """字体 + 样式表（需在 QApplication 创建之后调用）"""
-    global UI_FONT, NUM_FONT
-    UI_FONT = _pick_font(["Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "Segoe UI"])
+def _fonts_for_language():
+    code = i18n.current()
+    if code in ("zh-Hant", "zh-TW"):
+        return ["Microsoft JhengHei UI", "Microsoft JhengHei", "Noto Sans CJK TC",
+                "PingFang TC", "Segoe UI"]
+    if code == "ja":
+        return ["Yu Gothic UI", "Meiryo UI", "Noto Sans CJK JP", "MS UI Gothic", "Segoe UI"]
+    if code == "en":
+        return ["Segoe UI", "Microsoft YaHei UI", "Noto Sans CJK SC"]
+    return ["Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "PingFang SC", "Segoe UI"]
+
+
+def effective_theme(mode=None):
+    """system → 跟随 Windows/Qt 的深色设置；无法判断时保持深色。"""
+    mode = mode or THEME_MODE
+    if mode in ("dark", "light"):
+        return mode
+    try:
+        hints = QApplication.instance().styleHints()
+        scheme = hints.colorScheme()
+        if scheme == Qt.ColorScheme.Dark:
+            return "dark"
+        if scheme == Qt.ColorScheme.Light:
+            return "light"
+    except Exception:
+        pass
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                            r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize") as k:
+            light = winreg.QueryValueEx(k, "AppsUseLightTheme")[0]
+        return "light" if int(light) else "dark"
+    except Exception:
+        return "dark"
+
+
+def apply_theme(app, mode="system"):
+    """字体 + 样式表（需在 QApplication 创建之后调用）。C 原地更新，绘制代码无需重新绑定。"""
+    global UI_FONT, NUM_FONT, THEME_MODE, _APP
+    _APP = app
+    THEME_MODE = mode if mode in ("system", "dark", "light") else "system"
+    eff = effective_theme(THEME_MODE)
+    C.clear()
+    C.update(PALETTES[eff])
+    UI_FONT = _pick_font(_fonts_for_language())
     NUM_FONT = _pick_font(["Bahnschrift", "Segoe UI Semibold", "Segoe UI", UI_FONT])
     f = QFont(UI_FONT)
     f.setPixelSize(13)
     app.setFont(f)
     app.setStyleSheet(_qss())
     pg.setConfigOptions(antialias=True)
+    return eff
+
+
+def set_theme_mode(app, mode):
+    """切换主题并立即重绘；返回实际生效的 dark/light。"""
+    return apply_theme(app, mode)
+
 
 
 def _repolish(w):
@@ -160,6 +262,27 @@ def _num_font(px, bold=True):
     f.setPixelSize(max(6, int(px)))
     f.setWeight(QFont.Weight.DemiBold if bold else QFont.Weight.Normal)
     return f
+
+
+def _gear_icon(color: str, size: int = 20) -> QIcon:
+    """自绘齿轮图标：不依赖系统是否装有所需符号字体。"""
+    pm = QPixmap(size, size)
+    pm.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.translate(size / 2.0, size / 2.0)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QColor(color))
+    for i in range(8):
+        p.save()
+        p.rotate(i * 45)
+        p.drawRoundedRect(QRectF(-1.7, -size * 0.44, 3.4, size * 0.20), 0.8, 0.8)
+        p.restore()
+    p.drawEllipse(QRectF(-size * 0.33, -size * 0.33, size * 0.66, size * 0.66))
+    p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
+    p.drawEllipse(QRectF(-size * 0.14, -size * 0.14, size * 0.28, size * 0.28))
+    p.end()
+    return QIcon(pm)
 
 
 def _fmt_time(t):
@@ -193,26 +316,39 @@ class Card(QFrame):
 class MetricTile(QFrame):
     """实时指标：小标题 + 大号数值（字号随卡片大小自适应，过长时自动缩小）+ 可选副标题"""
 
-    def __init__(self, caption, color, big=False, mono=False, parent=None):
+    def __init__(self, caption, color_key, big=False, mono=False, parent=None):
         super().__init__(parent)
         self.setObjectName("tile")
-        self.color, self.big, self.mono = color, big, mono
+        self.color_key, self.big, self.mono = color_key, big, mono
+        self.caption = caption
         v = QVBoxLayout(self)
         v.setContentsMargins(14, 10, 14, 10)
         v.setSpacing(2)
-        cap = QLabel(f"<span style='color:{color}'>●</span>&nbsp;&nbsp;{caption}")
-        cap.setObjectName("tileCap")
-        cap.setTextFormat(Qt.TextFormat.RichText)
+        self.cap = QLabel()
+        self.cap.setObjectName("tileCap")
+        self.cap.setTextFormat(Qt.TextFormat.RichText)
+        self._update_caption()
         self.val = QLabel("—")
         self.val.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.val.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         self.sub = QLabel("")
         self.sub.setObjectName("tileSub")
-        v.addWidget(cap)
+        v.addWidget(self.cap)
         v.addWidget(self.val, 1)
         v.addWidget(self.sub)
         self.setMinimumHeight(72)
         self._px = 0
+
+    def _color(self):
+        return C.get(self.color_key, self.color_key)
+
+    def _update_caption(self):
+        self.cap.setText(f"<span style='color:{self._color()}'>●</span>&nbsp;&nbsp;{self.caption}")
+
+    def apply_theme(self):
+        self._update_caption()
+        self._px = 0
+        self._fit()
 
     def setText(self, s):
         self.val.setText(s if s else "—")
@@ -244,7 +380,7 @@ class MetricTile(QFrame):
         px = int(px)
         if px != self._px:
             self._px = px
-            color = C["faint"] if self.val.text() == "—" else self.color
+            color = C["faint"] if self.val.text() == "—" else self._color()
             self.val.setStyleSheet(f"color:{color}; font-family:'{fam}'; font-size:{px}px; font-weight:600;")
 
 
@@ -292,9 +428,10 @@ class KeyTile(QWidget):
             p.setBrush(QBrush(g))
             fg, fg2 = QColor("#1b1405") if not chord else QColor("#062019"), QColor(0, 0, 0, 150)
         else:
-            p.setPen(QPen(QColor("#24473c" if chord else "#2a3142"), 1))
-            p.setBrush(QColor("#152824" if chord else "#1c212c"))
-            fg, fg2 = QColor("#bfe9da" if chord else "#e3e6ee"), QColor("#6fae98" if chord else "#7c859b")
+            p.setPen(QPen(QColor(C["chord_border"] if chord else C["key_border"]), 1))
+            p.setBrush(QColor(C["chord_bg"] if chord else C["key_bg"]))
+            fg = QColor(C["chord_fg"] if chord else C["key_fg"])
+            fg2 = QColor(C["chord_sub"] if chord else C["key_sub"])
         p.drawRoundedRect(r, rad, rad)
         h = r.height()
         top = QRectF(r.left(), r.top() + h * 0.10, r.width(), h * 0.50)
@@ -337,11 +474,11 @@ class KeyPanel(QWidget):
             self.grid.setRowStretch(r, 0)
         key_map = {k[0]: k for k in inst.keys}
         if inst.name == "悠可琴":
-            rows = [("和弦", "QWERTYU"), ("高音", "ASDFGHJ"), ("低音", "ZXCVBNM")]
+            rows = [(T("和弦"), "QWERTYU"), (T("高音"), "ASDFGHJ"), (T("低音"), "ZXCVBNM")]
         elif inst.name == "晚风圆号":
-            rows = [("高音", "QWERTYU"), ("低音", "ASDFGHJ")]
+            rows = [(T("高音"), "QWERTYU"), (T("低音"), "ASDFGHJ")]
         else:
-            rows = [("高音", "QWERTYU"), ("中音", "ASDFGHJ"), ("低音", "ZXCVBNM")]
+            rows = [(T("高音"), "QWERTYU"), (T("中音"), "ASDFGHJ"), (T("低音"), "ZXCVBNM")]
         for r, (title, letters) in enumerate(rows):
             lab = QLabel(title)
             lab.setObjectName("rowLabel")
@@ -350,9 +487,10 @@ class KeyPanel(QWidget):
             for c, ch in enumerate(letters):
                 label, midi, kind, extra = key_map[ch]
                 if kind == "chord":
-                    tile = KeyTile(ch, str(extra), "chord", f"和弦键 {ch}：{extra}")
+                    tile = KeyTile(ch, str(extra), "chord", T("和弦键 {key}：{chord}", key=ch, chord=extra))
                 else:
-                    tile = KeyTile(ch, midi_to_name(midi), "pitch", f"键 {ch} = {midi_to_name(midi)}")
+                    tile = KeyTile(ch, midi_to_name(midi), "pitch",
+                                   T("键 {key} = {note}", key=ch, note=midi_to_name(midi)))
                 self.grid.addWidget(tile, r, c + 1)
                 self.buttons[ch] = tile
             self.grid.setRowStretch(r, 1)
@@ -417,7 +555,7 @@ class BpmChart(QWidget):
         head.setSpacing(6)
         self.chips = {}
         for key in ("当前", "平均", "最低", "最高"):
-            lab = QLabel(f"{key}  —")
+            lab = QLabel(f"{T(key)}  —")
             lab.setObjectName("chip")
             head.addWidget(lab)
             self.chips[key] = lab
@@ -430,7 +568,7 @@ class BpmChart(QWidget):
         self.range_group = QButtonGroup(self)
         self.range_group.setExclusive(True)
         for i, (name, sec) in enumerate(self.RANGES):
-            b = QPushButton(name)
+            b = QPushButton(T(name))
             b.setCheckable(True)
             b.setCursor(Qt.CursorShape.PointingHandCursor)
             b.setChecked(sec == self.window)
@@ -469,13 +607,35 @@ class BpmChart(QWidget):
         self.hover_text.setFont(_num_font(12, bold=False))
         pi.addItem(self.hover_text, ignoreBounds=True)
         self.hover_text.hide()
-        self.empty_text = pg.TextItem("开始演奏后，这里会实时画出 BPM 随时间的变化", color=C["faint"], anchor=(0.5, 0.5))
+        self.empty_text = pg.TextItem(T("开始演奏后，这里会实时画出 BPM 随时间的变化"),
+                                      color=C["faint"], anchor=(0.5, 0.5))
         f = QFont(UI_FONT)
         f.setPixelSize(13)
         self.empty_text.setFont(f)
         pi.addItem(self.empty_text, ignoreBounds=True)
         self._proxy = pg.SignalProxy(self.plot.scene().sigMouseMoved, rateLimit=40, slot=self._on_move)
         lay.addWidget(self.plot, 1)
+        self.refresh()
+
+    def apply_theme(self):
+        """主题切换后同步 pyqtgraph 自绘元素（QSS 管不到它们）。"""
+        pi = self.plot.getPlotItem()
+        self.plot.setBackground(C["card"])
+        for name in ("left", "bottom"):
+            ax = pi.getAxis(name)
+            ax.setPen(pg.mkPen(C["border_hi"]))
+            ax.setTextPen(pg.mkPen(C["dim"]))
+        self.bars.setOpts(brush=pg.mkBrush(C["gold"]))
+        gold = QColor(C["gold"])
+        gold.setAlpha(150)
+        self.cur_line.setPen(pg.mkPen(gold, width=1, style=Qt.PenStyle.DashLine))
+        dim = QColor(C["text"])
+        dim.setAlpha(70)
+        self.hover_line.setPen(pg.mkPen(dim, width=1))
+        try:
+            self.empty_text.setColor(C["faint"])
+        except Exception:
+            pass
         self.refresh()
 
     # ---------------------------------------------------------- 数据
@@ -519,7 +679,7 @@ class BpmChart(QWidget):
             self.empty_text.setPos(30, 150)
             self.empty_text.show()
             for k, lab in self.chips.items():
-                lab.setText(f"{k}  —")
+                lab.setText(f"{T(k)}  —")
             self._shown = ([], [])
             self.stats_changed.emit("")
             return
@@ -567,13 +727,16 @@ class BpmChart(QWidget):
         self._shown = (ts, vs)
         seg_v = self.v[i0:]
         avg = sum(seg_v) / len(seg_v)
-        self.chips["当前"].setText(f"当前  {cur:.1f}")
-        self.chips["平均"].setText(f"平均  {avg:.1f}")
-        self.chips["最低"].setText(f"最低  {min(seg_v):.1f}")
-        self.chips["最高"].setText(f"最高  {max(seg_v):.1f}")
+        self.chips["当前"].setText(T("当前  {value}", value=f"{cur:.1f}"))
+        self.chips["平均"].setText(T("平均  {value}", value=f"{avg:.1f}"))
+        self.chips["最低"].setText(T("最低  {value}", value=f"{min(seg_v):.1f}"))
+        self.chips["最高"].setText(T("最高  {value}", value=f"{max(seg_v):.1f}"))
         name = next(n for n, s in self.RANGES if s == self.window)
-        self.stats_changed.emit(f"{'全程' if self.window is None else '近 ' + name.replace(' ', '')} "
-                                f"{min(seg_v):.0f} – {max(seg_v):.0f}")
+        if self.window is None:
+            self.stats_changed.emit(T("全程 {lo} – {hi}", lo=f"{min(seg_v):.0f}", hi=f"{max(seg_v):.0f}"))
+        else:
+            self.stats_changed.emit(T("近 {range} {lo} – {hi}", range=T(name),
+                                      lo=f"{min(seg_v):.0f}", hi=f"{max(seg_v):.0f}"))
 
     def _on_move(self, evt):
         pos = evt[0]
@@ -623,7 +786,7 @@ class NotesModel(QAbstractTableModel):
            "「余音自然衰减」表示拨弦类余音自然消失，松键时刻在声音里不可观测，此时长是余音长度",
         5: "与上一个起音的间隔（和弦算一次起音），BPM 由它计算",
     }
-    END_COLOR = {"release": C["cyan"], "retrig": C["violet"], "decay": C["dim"]}
+    END_COLOR = {"release": "cyan", "retrig": "violet", "decay": "dim"}
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -649,7 +812,7 @@ class NotesModel(QAbstractTableModel):
             if c == 4:
                 return QColor(C["gold"])
             if c == 6:
-                return QColor(self.END_COLOR.get(row["end"], C["dim"]))
+                return QColor(C.get(self.END_COLOR.get(row["end"], "dim"), C["dim"]))
             if c in (0, 5):
                 return QColor(C["dim"])
             return None
@@ -665,9 +828,9 @@ class NotesModel(QAbstractTableModel):
         if orientation != Qt.Orientation.Horizontal:
             return None
         if role == Qt.ItemDataRole.DisplayRole:
-            return self.HEAD[section]
+            return T(self.HEAD[section])
         if role == Qt.ItemDataRole.ToolTipRole:
-            return self.TIPS.get(section)
+            return T(self.TIPS[section]) if section in self.TIPS else None
         if role == Qt.ItemDataRole.TextAlignmentRole:
             if section in (0, 4, 5):
                 return int(Qt.AlignmentFlag.AlignCenter)
@@ -701,7 +864,7 @@ class FindingsModel(QAbstractTableModel):
     TIPS = {
         2: "超出人手极限：人做不到（例如同时按下超过 10 个键）\n疑似机械操作：人极难做到，需结合其它证据判断",
     }
-    LEVEL_COLOR = {LEVEL_LIMIT: C["red"], LEVEL_SUSPECT: C["gold"]}
+    LEVEL_COLOR = {LEVEL_LIMIT: "red", LEVEL_SUSPECT: "gold"}
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -728,7 +891,7 @@ class FindingsModel(QAbstractTableModel):
             return row["f"].get("text", "")
         if role == Qt.ItemDataRole.ForegroundRole:
             if c == 2:
-                return QColor(self.LEVEL_COLOR.get(row["f"]["level"], C["dim"]))
+                return QColor(C.get(self.LEVEL_COLOR.get(row["f"]["level"], "dim"), C["dim"]))
             if c in (0, 4):
                 return QColor(C["dim"])
             return None
@@ -742,16 +905,16 @@ class FindingsModel(QAbstractTableModel):
         if orientation != Qt.Orientation.Horizontal:
             return None
         if role == Qt.ItemDataRole.DisplayRole:
-            return self.HEAD[section]
+            return T(self.HEAD[section])
         if role == Qt.ItemDataRole.ToolTipRole:
-            return self.TIPS.get(section)
+            return T(self.TIPS[section]) if section in self.TIPS else None
         if role == Qt.ItemDataRole.TextAlignmentRole:
             return int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         return None
 
     def upsert(self, key, f, t_off):
         """新增或更新一条发现；返回 True = 新增"""
-        disp = [_fmt_time(f["t"] + t_off), KIND_TEXT.get(f["kind"], f["kind"]), LEVEL_TEXT.get(f["level"], ""),
+        disp = [_fmt_time(f["t"] + t_off), kind_text(f["kind"]), level_text(f["level"]),
                 f.get("title", ""), f.get("text", "")]
         if key in self._pos:
             i = self._pos[key]
@@ -811,85 +974,98 @@ class DetectWorker(QThread):
 
     # ------------------------------------------------------------
     def run(self):
-        self.sig_status.emit("正在初始化采集设备…")
+        self.sig_status.emit(T("正在初始化采集设备…"))
         cap = AudioCapture(device_id=self.device_id, is_loopback=self.is_loopback)
         try:
             cap.open()
         except Exception as e:
-            self.sig_error.emit(f"打开采集设备失败：{e}\n请检查设备是否被占用，或点击「刷新」重选设备。")
+            self.sig_error.emit(T("打开采集设备失败：{error}\n请检查设备是否被占用，或点击「刷新」重选设备。",
+                                  error=e))
             return
-        mode = "扬声器输出(回环)" if self.is_loopback else "麦克风"
-        self.sig_status.emit(f"正在监听【{mode}】… 请演奏乐器")
-        diag.dbg(f"audio_started device={self.device_id} loopback={self.is_loopback} mode={mode}")
-        err_count = 0
-        last_keys_emit = 0.0
-        blocks = 0
-        notes_total = 0
-        while not self._stop:
-            self.detector.set_sensitivity(self.sensitivity)
-            block = cap.read_block()
-            if block is None:
-                err_count += 1
-                if err_count > 40:
-                    self.sig_error.emit("连续读取音频失败，采集已中断。请刷新设备后重试。")
-                    break
-                continue
+        try:
+            mode = T("扬声器输出(回环)") if self.is_loopback else T("麦克风")
+            self.sig_status.emit(T("正在监听【{mode}】… 请演奏乐器", mode=mode))
+            diag.dbg(f"audio_started device={self.device_id} loopback={self.is_loopback} mode={mode}")
             err_count = 0
-            blocks += 1
-            res = self.detector.feed(block)
-            for f in self.screener.process(block, self.detector):
-                self.sig_finding.emit(dict(f))
-            if blocks % 24 == 0:
-                summ = self.screener.summary()
-                if summ != self._last_screen:
-                    self._last_screen = summ
-                    self.sig_screen.emit(summ)
-            notes_total += len(res["note_events"])
-            if blocks % 240 == 0:
-                diag.dbg(f"alive blocks={blocks} active={len(self._active_labels)} notes_total={notes_total}")
-            now = time.time()
+            last_keys_emit = 0.0
+            blocks = 0
+            notes_total = 0
+            while not self._stop:
+                self.detector.set_sensitivity(self.sensitivity)
+                block = cap.read_block()
+                if block is None:
+                    err_count += 1
+                    if err_count > 40:
+                        self.sig_error.emit(T("连续读取音频失败，采集已中断。请刷新设备后重试。"))
+                        break
+                    continue
+                err_count = 0
+                blocks += 1
+                res = self.detector.feed(block)
+                for f in self.screener.process(block, self.detector):
+                    self.sig_finding.emit(dict(f))
+                if blocks % 24 == 0:
+                    summ = self.screener.summary()
+                    if summ != self._last_screen:
+                        self._last_screen = summ
+                        self.sig_screen.emit(summ)
+                notes_total += len(res["note_events"])
+                if blocks % 240 == 0:
+                    diag.dbg(f"alive blocks={blocks} active={len(self._active_labels)} notes_total={notes_total}")
+                now = time.time()
 
-            # 活跃键位（去抖后发射）
-            new_active = set(res["keys"].keys())
-            if new_active != self._active_labels or (now - last_keys_emit > 0.12 and new_active):
-                self._active_labels = new_active
-                last_keys_emit = now
-                self.sig_keys.emit(set(new_active))
+                # 活跃键位（去抖后发射）
+                new_active = set(res["keys"].keys())
+                if new_active != self._active_labels or (now - last_keys_emit > 0.12 and new_active):
+                    self._active_labels = new_active
+                    last_keys_emit = now
+                    self.sig_keys.emit(set(new_active))
 
-            for ev in res["note_events"]:
-                self.sig_note.emit(ev)
+                for ev in res["note_events"]:
+                    self.sig_note.emit(ev)
 
-            if res["chord"] != self._last_chord:
-                # 和弦变化（包括"没有和弦"）都要发出：否则弹旋律时会一直挂着上一个和弦
-                self._last_chord = res["chord"]
-                self.sig_chord.emit(res["chord"])
-            if res["tonality"] and res["tonality"] != self._last_key:
-                self._last_key = res["tonality"]
-                self.sig_tonality.emit(res["tonality"])
+                if res["chord"] != self._last_chord:
+                    # 和弦变化（包括"没有和弦"）都要发出：否则弹旋律时会一直挂着上一个和弦
+                    self._last_chord = res["chord"]
+                    self.sig_chord.emit(res["chord"])
+                if res["tonality"] and res["tonality"] != self._last_key:
+                    self._last_key = res["tonality"]
+                    self.sig_tonality.emit(res["tonality"])
 
-            bpm = res["bpm"]
-            if bpm is None:
-                if self._last_bpm is not None:
-                    self._last_bpm = None
-                    self.sig_bpm.emit(float("nan"))
-            else:
-                if (self._last_bpm is None or abs(bpm - self._last_bpm) >= 0.05) and now - self._last_bpm_t >= 0.25:
-                    self._last_bpm = bpm
-                    self._last_bpm_t = now
-                    self.sig_bpm.emit(bpm)
-                t_audio = res["t"]
-                if t_audio - self._last_sample_t >= BPM_SAMPLE_S:
-                    self._last_sample_t = t_audio
-                    self.sig_bpm_sample.emit(t_audio, bpm)
-        cap.close()
-        self.sig_status.emit("已停止")
+                bpm = res["bpm"]
+                if bpm is None:
+                    if self._last_bpm is not None:
+                        self._last_bpm = None
+                        self.sig_bpm.emit(float("nan"))
+                else:
+                    if (self._last_bpm is None or abs(bpm - self._last_bpm) >= 0.05) and now - self._last_bpm_t >= 0.25:
+                        self._last_bpm = bpm
+                        self._last_bpm_t = now
+                        self.sig_bpm.emit(bpm)
+                    t_audio = res["t"]
+                    if t_audio - self._last_sample_t >= BPM_SAMPLE_S:
+                        self._last_sample_t = t_audio
+                        self.sig_bpm_sample.emit(t_audio, bpm)
+        except Exception as e:
+            diag.dbg(f"audio_loop_error {e!r}")
+            self.sig_error.emit(T("采集线程异常：{error}", error=e))
+        finally:
+            try:
+                cap.close()
+            except Exception:
+                pass
+            self.sig_status.emit(T("已停止"))
 
 
 # ================================================================ 主窗口
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}")
+        self.cfg = settings.load()
+        self._update_info = None
+        self._update_checker = None
+        self._settings_dialog = None
+        self.setWindowTitle(f"{T('原神乐器演奏检测器')} v{APP_VERSION}")
         self.worker = None
         self.instruments = all_instruments()
         self._t_offset = 0.0         # 多次开始/停止：时间接着上一次往后记
@@ -897,11 +1073,13 @@ class MainWindow(QMainWindow):
         self._fit_to_screen()
         self.refresh_devices()
         self.on_instrument_changed()
-        self.statusBar().showMessage("就绪 — 选择乐器与采集设备后点击「开始监听」")
+        self.statusBar().showMessage(T("就绪 — 选择乐器与采集设备后点击「开始监听」"))
         self._chart_timer = QTimer(self)
         self._chart_timer.setInterval(400)
         self._chart_timer.timeout.connect(self._tick_chart)
         self._chart_timer.start()
+        if self.cfg.get("check_updates", "1") == "1" and not os.environ.get("GID_NO_UPDATE"):
+            QTimer.singleShot(1800, lambda: self.check_updates(silent=True))
 
     def showEvent(self, e):
         super().showEvent(e)
@@ -937,33 +1115,49 @@ class MainWindow(QMainWindow):
             logo = QLabel()
             logo.setPixmap(QIcon(icon_path).pixmap(26, 26))
             top.addWidget(logo)
-        title = QLabel(APP_NAME)
+        title = QLabel(T("原神乐器演奏检测器"))
         title.setObjectName("appTitle")
         top.addWidget(title)
         ver = QLabel(f"v{APP_VERSION}")
         ver.setObjectName("appVer")
         top.addWidget(ver, 0, Qt.AlignmentFlag.AlignBottom)
         top.addSpacing(12)
-        self.pill = QLabel("○  未在监听")
+        self.pill = QLabel(T("○  未在监听"))
         self.pill.setObjectName("pill")
         self.pill.setProperty("state", "off")
         top.addWidget(self.pill)
-        self.btn_screen = QPushButton("排查  未发现异常")
+        self.btn_screen = QPushButton(T("排查  未发现异常"))
         self.btn_screen.setObjectName("pillBtn")
         self.btn_screen.setProperty("state", "ok")
         self.btn_screen.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_screen.setToolTip("边界值排查：找出超出人手极限的操作（点击查看）")
+        self.btn_screen.setToolTip(T("边界值排查：找出超出人手极限的操作（点击查看）"))
         self.btn_screen.clicked.connect(lambda: self._set_page(1))
         top.addWidget(self.btn_screen)
+        self.btn_update = QPushButton("")
+        self.btn_update.setObjectName("pillBtn")
+        self.btn_update.setProperty("state", "warn")
+        self.btn_update.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_update.clicked.connect(self._open_release_page)
+        self.btn_update.hide()
+        top.addWidget(self.btn_update)
         top.addStretch(1)
-        self.btn_export = QPushButton("导出记录")
-        self.btn_export.setToolTip("把每个音的时长表、BPM 随时间的记录、边界值排查结果导出为 CSV（Excel 可直接打开）")
+        self.btn_settings = QPushButton()
+        self.btn_settings.setObjectName("pillBtn")
+        self.btn_settings.setIcon(_gear_icon(C["dim"]))
+        self.btn_settings.setIconSize(QSize(19, 19))
+        self.btn_settings.setFixedWidth(38)
+        self.btn_settings.setToolTip(T("设置"))
+        self.btn_settings.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_settings.clicked.connect(self.open_settings)
+        top.addWidget(self.btn_settings)
+        self.btn_export = QPushButton(T("导出记录"))
+        self.btn_export.setToolTip(T("把每个音的时长表、BPM 随时间的记录、边界值排查结果导出为 CSV（Excel 可直接打开）"))
         self.btn_export.clicked.connect(self.on_export)
         top.addWidget(self.btn_export)
-        self.btn_clear = QPushButton("清空记录")
+        self.btn_clear = QPushButton(T("清空记录"))
         self.btn_clear.clicked.connect(self.on_clear)
         top.addWidget(self.btn_clear)
-        self.btn_start = QPushButton("▶  开始监听")
+        self.btn_start = QPushButton(T("▶  开始监听"))
         self.btn_start.setObjectName("primary")
         self.btn_start.setCheckable(True)
         self.btn_start.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -977,34 +1171,34 @@ class MainWindow(QMainWindow):
         bl.setSpacing(10)
         bar.body.setContentsMargins(16, 10, 16, 10)
         bar.body.addLayout(bl)
-        bl.addWidget(self._field("乐器"))
+        bl.addWidget(self._field(T("乐器")))
         self.cmb_instrument = QComboBox()
         for inst in self.instruments:
-            self.cmb_instrument.addItem(inst.name)
+            self.cmb_instrument.addItem(T(inst.name))
         self.cmb_instrument.setMinimumWidth(130)
         self.cmb_instrument.currentIndexChanged.connect(self.on_instrument_changed)
         bl.addWidget(self.cmb_instrument)
         bl.addSpacing(8)
-        bl.addWidget(self._field("移调"))
+        bl.addWidget(self._field(T("移调")))
         self.spin_transpose = QSpinBox()
         self.spin_transpose.setRange(-12, 12)
         self.spin_transpose.setValue(0)
         self.spin_transpose.setFixedWidth(66)
-        self.spin_transpose.setToolTip("音高基准校准（半音）。若检测出的八度与实际不符，用此项整体平移。")
+        self.spin_transpose.setToolTip(T("音高基准校准（半音）。若检测出的八度与实际不符，用此项整体平移。"))
         self.spin_transpose.valueChanged.connect(self.on_instrument_changed)
         bl.addWidget(self.spin_transpose)
         bl.addSpacing(8)
-        bl.addWidget(self._field("采集设备"))
+        bl.addWidget(self._field(T("采集设备")))
         self.cmb_device = QComboBox()
         self.cmb_device.setMinimumWidth(260)
         self.cmb_device.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         bl.addWidget(self.cmb_device, 1)
-        self.btn_refresh = QPushButton("刷新")
-        self.btn_refresh.setToolTip("重新扫描扬声器 / 麦克风")
+        self.btn_refresh = QPushButton(T("刷新"))
+        self.btn_refresh.setToolTip(T("重新扫描扬声器 / 麦克风"))
         self.btn_refresh.clicked.connect(self.refresh_devices)
         bl.addWidget(self.btn_refresh)
         bl.addSpacing(8)
-        bl.addWidget(self._field("灵敏度"))
+        bl.addWidget(self._field(T("灵敏度")))
         self.slider_sens = QSlider(Qt.Orientation.Horizontal)
         self.slider_sens.setRange(10, 100)
         self.slider_sens.setValue(55)
@@ -1025,7 +1219,7 @@ class MainWindow(QMainWindow):
         tr = QHBoxLayout(top_row)
         tr.setContentsMargins(0, 0, 0, 0)
         tr.setSpacing(10)
-        keys_card = Card("琴键", "高亮 = 正在发音")
+        keys_card = Card(T("琴键"), T("高亮 = 正在发音"))
         self.key_panel = KeyPanel()
         keys_card.body.addWidget(self.key_panel, 1)
         tr.addWidget(keys_card, 3)
@@ -1034,10 +1228,10 @@ class MainWindow(QMainWindow):
         ig = QGridLayout(info)
         ig.setContentsMargins(0, 0, 0, 0)
         ig.setSpacing(10)
-        self.lab_notes = MetricTile("当前按键", C["cyan"])
-        self.lab_chord = MetricTile("和弦", C["green"])
-        self.lab_key = MetricTile("调性", C["violet"])
-        self.lab_bpm = MetricTile("当前 BPM", C["gold"], big=True, mono=True)
+        self.lab_notes = MetricTile(T("当前按键"), "cyan")
+        self.lab_chord = MetricTile(T("和弦"), "green")
+        self.lab_key = MetricTile(T("调性"), "violet")
+        self.lab_bpm = MetricTile(T("当前 BPM"), "gold", big=True, mono=True)
         ig.addWidget(self.lab_notes, 0, 0)
         ig.addWidget(self.lab_chord, 0, 1)
         ig.addWidget(self.lab_key, 1, 0)
@@ -1049,7 +1243,7 @@ class MainWindow(QMainWindow):
         tr.addWidget(info, 2)
         split.addWidget(top_row)
 
-        chart_card = Card("BPM 变化", "每 0.5 秒一个点，纵轴随数据自动缩放，鼠标悬停看具体读数")
+        chart_card = Card(T("BPM 变化"), T("每 0.5 秒一个点，纵轴随数据自动缩放，鼠标悬停看具体读数"))
         self.chart = BpmChart()
         self.chart.stats_changed.connect(self.lab_bpm.setSub)
         chart_card.body.addWidget(self.chart, 1)
@@ -1066,7 +1260,7 @@ class MainWindow(QMainWindow):
         self.page_group = QButtonGroup(self)
         self.page_group.setExclusive(True)
         self.page_btns = []
-        for i, name in enumerate(("每个音的时长", "边界值排查")):
+        for i, name in enumerate((T("每个音的时长"), T("边界值排查"))):
             b = QPushButton(name)
             b.setCheckable(True)
             b.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -1154,9 +1348,10 @@ class MainWindow(QMainWindow):
         self.pill.setProperty("state", state)
         _repolish(self.pill)
 
-    SCREEN_HELP = ("检查两类超出人手极限的操作：① 同时按下超过 10 个键（人只有 10 根手指）；"
-                   "② 很长一段连续音的间隔完全一致（机器级精度）。原神的声音按约 21 ms 一块发出，"
-                   "短的轮指人手也会显得完全一致，所以只报很长的段。结果是证据而非定论。")
+    def _screen_help(self):
+        return T("检查两类超出人手极限的操作：① 同时按下超过 10 个键（人只有 10 根手指）；"
+                 "② 很长一段连续音的间隔完全一致（机器级精度）。原神的声音按约 21 ms 一块发出，"
+                 "短的轮指人手也会显得完全一致，所以只报很长的段。结果是证据而非定论。")
 
     def _set_page(self, i):
         self.page_btns[i].setChecked(True)
@@ -1166,26 +1361,31 @@ class MainWindow(QMainWindow):
     def _update_screen(self):
         lim, sus = self.findings.counts()
         if lim:
-            text, state = f"排查  ⚠ 超出人手极限 {lim} 处" + (f" · 疑似 {sus} 处" if sus else ""), "bad"
+            text = T("排查  ⚠ 超出人手极限 {n} 处", n=lim)
+            if sus:
+                text += T(" · 疑似 {n} 处", n=sus)
+            state = "bad"
         elif sus:
-            text, state = f"排查  ⚠ 疑似机械操作 {sus} 处", "warn"
+            text, state = T("排查  ⚠ 疑似机械操作 {n} 处", n=sus), "warn"
         else:
-            text, state = "排查  未发现异常", "ok"
+            text, state = T("排查  未发现异常"), "ok"
         self.btn_screen.setText(text)
         self.btn_screen.setProperty("state", state)
         _repolish(self.btn_screen)
         n = lim + sus
-        self.page_btns[1].setText(f"边界值排查  {n}" if n else "边界值排查")
-        head = self._screen_text or "还没有数据。"
-        self.screen_summary.setText(f"<b>{head}</b><br>{self.SCREEN_HELP}")
+        self.page_btns[1].setText(T("边界值排查  {n}", n=n) if n else T("边界值排查"))
+        head = self._screen_text or T("还没有数据。")
+        self.screen_summary.setText(f"<b>{head}</b><br>{self._screen_help()}")
         self._update_table_hint()
 
     def on_finding(self, f):
         new = self.findings.upsert((self._worker_serial, f["id"]), f, self._t_offset)
         self._update_screen()
         if new:
-            self.statusBar().showMessage(f"边界值排查：{_fmt_time(f['t'] + self._t_offset)}  {f['title']}"
-                                         f"（{LEVEL_TEXT.get(f['level'], '')}）", 15000)
+            self.statusBar().showMessage(
+                T("边界值排查：{time}  {title}（{level}）",
+                  time=_fmt_time(f['t'] + self._t_offset), title=f['title'], level=level_text(f['level'])),
+                15000)
 
     def on_screen_summary(self, s):
         self._screen_text = s
@@ -1193,11 +1393,12 @@ class MainWindow(QMainWindow):
 
     def _update_table_hint(self):
         if getattr(self, "pages", None) is not None and self.pages.currentIndex() == 1:
-            self.tab_hint.setText("最新在上 · 鼠标停在一行上看完整说明")
+            self.tab_hint.setText(T("最新在上 · 鼠标停在一行上看完整说明"))
             return
         n = self.notes.rowCount()
-        self.page_btns[0].setText(f"每个音的时长  {n}" if n else "每个音的时长")
-        self.tab_hint.setText(f"最新在上，最多保留 {NOTES_KEEP} 条" if n else "演奏后逐条记录每个音")
+        self.page_btns[0].setText(T("每个音的时长  {n}", n=n) if n else T("每个音的时长"))
+        self.tab_hint.setText(T("最新在上，最多保留 {n} 条", n=NOTES_KEEP) if n
+                              else T("演奏后逐条记录每个音"))
 
     def _tick_chart(self):
         if self.chart.dirty:
@@ -1214,12 +1415,12 @@ class MainWindow(QMainWindow):
         default_id = default_loopback_id()
         sel = 0
         for i, (dev_id, name, kind) in enumerate(sources):
-            tag = "（扬声器输出·回环）" if kind == "loopback" else "（麦克风）"
+            tag = T("（扬声器输出·回环）") if kind == "loopback" else T("（麦克风）")
             self.cmb_device.addItem(f"{name} {tag}", (dev_id, kind == "loopback"))
             if dev_id == default_id:
                 sel = i
         if self.cmb_device.count() == 0:
-            self.cmb_device.addItem("（未找到可用采集设备）", (None, True))
+            self.cmb_device.addItem(T("（未找到可用采集设备）"), (None, True))
         self.cmb_device.setCurrentIndex(min(sel, self.cmb_device.count() - 1))
         self.cmb_device.blockSignals(False)
 
@@ -1245,18 +1446,20 @@ class MainWindow(QMainWindow):
         if self.worker is not None:
             self.stop_worker()
             self.btn_start.setChecked(False)
-            self.btn_start.setText("▶  开始监听")
+            self.btn_start.setText(T("▶  开始监听"))
             return
         self.start_worker()
 
     def start_worker(self):
+        if self.worker is not None:
+            return
         if self.cmb_device.count() == 0:
-            QMessageBox.warning(self, "提示", "未找到可用采集设备。")
+            QMessageBox.warning(self, T("提示"), T("未找到可用采集设备。"))
             self.btn_start.setChecked(False)
             return
         dev_id, is_loop = self.cmb_device.currentData()
         if dev_id is None:
-            QMessageBox.warning(self, "提示", "请先刷新并选择采集设备。")
+            QMessageBox.warning(self, T("提示"), T("请先刷新并选择采集设备。"))
             self.btn_start.setChecked(False)
             return
         # 接着已有记录往后计时（停止后再开始、换乐器重启时，表格与 BPM 图不会从 0 重叠）
@@ -1264,7 +1467,7 @@ class MainWindow(QMainWindow):
         self._t_offset = max(self.chart.last_time(), last_note) + (1.0 if (self.notes.rows or self.chart.t) else 0.0)
         self.worker = DetectWorker(
             self._current_inst, dev_id, is_loop,
-            self.slider_sens.value() / 100.0)
+            self.slider_sens.value() / 100.0, parent=self)
         self.worker.sig_keys.connect(self.on_keys)
         self.worker.sig_note.connect(self.on_note)
         self.worker.sig_chord.connect(self.lab_chord.setText)
@@ -1277,28 +1480,36 @@ class MainWindow(QMainWindow):
         self.worker.sig_status.connect(self._on_status)
         self.worker.sig_error.connect(self.on_error)
         self.worker.finished.connect(self.on_worker_finished)
+        self.worker.finished.connect(self.worker.deleteLater)
         self.worker.start()
         self.btn_start.setChecked(True)
-        self.btn_start.setText("■  停止监听")
-        self._set_pill("●  正在启动…", "on")
+        self.btn_start.setText(T("■  停止监听"))
+        self._set_pill(T("●  正在启动…"), "on")
 
     def _on_status(self, s):
         self.statusBar().showMessage(s)
-        if s.startswith("正在监听"):
-            self._set_pill("●  " + s.split("…")[0], "on")
-        elif s == "已停止":
-            self._set_pill("○  未在监听", "off")
+        if s.startswith(T("正在监听")):
+            self._set_pill("●  " + T("正在监听"), "on")
+        elif s == T("已停止"):
+            self._set_pill(T("○  未在监听"), "off")
 
     def stop_worker(self):
-        if self.worker is not None:
-            self.worker.stop()
-            self.worker.wait(3000)
-            self.worker = None
+        w = self.worker
+        if w is not None:
+            w.stop()
+            if not w.wait(5000):
+                # 采集后端卡住时不能直接丢掉 QThread：先终止，再等待退出。
+                w.terminate()
+                w.wait(2000)
+            if w.isFinished():
+                self.worker = None
+            else:
+                diag.dbg("worker_still_running_after_stop")
         self.key_panel.set_active(set())
         self.lab_notes.setText("—")
         self.lab_chord.setText("—")
         self.lab_bpm.setText("—")
-        self._set_pill("○  未在监听", "off")
+        self._set_pill(T("○  未在监听"), "off")
 
     def restart_worker(self):
         if self.worker is not None:
@@ -1309,18 +1520,30 @@ class MainWindow(QMainWindow):
                 self.start_worker()
 
     def on_worker_finished(self):
-        if self.worker is not None and self.worker.isFinished():
+        w = self.sender()
+        if self.worker is not None and w is self.worker and self.worker.isFinished():
             self.worker = None
         if self.worker is None:
             self.btn_start.setChecked(False)
-            self.btn_start.setText("▶  开始监听")
+            self.btn_start.setText(T("▶  开始监听"))
             if self.pill.property("state") != "err":
-                self._set_pill("○  未在监听", "off")
+                self._set_pill(T("○  未在监听"), "off")
+
+    def closeEvent(self, e):
+        if self.worker is not None:
+            w = self.worker
+            w.stop()
+            if not w.wait(5000):
+                w.terminate()
+                w.wait(2000)
+            if w.isFinished():
+                self.worker = None
+        super().closeEvent(e)
 
     def on_error(self, msg):
         self.stop_worker()
-        self._set_pill("●  采集出错", "err")
-        QMessageBox.critical(self, "采集错误", msg)
+        self._set_pill(T("●  采集出错"), "err")
+        QMessageBox.critical(self, T("采集错误"), msg)
 
     # ------------------------------------------------------------ 数据显示
     def on_keys(self, labels):
@@ -1340,9 +1563,9 @@ class MainWindow(QMainWindow):
         t = ev["t"] + self._t_offset
         notes = []
         if ev.get("end"):
-            notes.append(END_REASON_TEXT.get(ev["end"], ev["end"]))
+            notes.append(end_reason_text(ev["end"]))
         if ev.get("approx"):
-            notes.append("≈吸附")
+            notes.append(T("≈吸附"))
         ioi = ev.get("ioi_ms")
         end_text = " · ".join(notes)
         raw = (t, ev["key"], ev["name"], ev["solfege"] or "", ev["dur_ms"], ioi, end_text)
@@ -1359,47 +1582,49 @@ class MainWindow(QMainWindow):
 
     def on_export(self):
         if not self.notes.rows and not self.chart.t and not self.findings.rows:
-            QMessageBox.information(self, "导出记录", "还没有记录可以导出。")
+            QMessageBox.information(self, T("导出记录"), T("还没有记录可以导出。"))
             return
         base_dir = os.path.join(os.path.expanduser("~"), "Desktop")
         if not os.path.isdir(base_dir):
             base_dir = os.path.expanduser("~")
-        default = os.path.join(base_dir, f"演奏记录_{time.strftime('%Y%m%d_%H%M%S')}.csv")
-        path, _ = QFileDialog.getSaveFileName(self, "导出记录", default, "CSV 表格 (*.csv)")
+        stamp = time.strftime("%Y%m%d_%H%M%S")
+        default = os.path.join(base_dir, T("演奏记录_{timestamp}.csv", timestamp=stamp))
+        path, _ = QFileDialog.getSaveFileName(self, T("导出记录"), default, T("CSV 表格 (*.csv)"))
         if not path:
             return
         root, ext = os.path.splitext(path)
         if not ext:
             path = root + ".csv"
         bpm_path = os.path.splitext(path)[0] + "_BPM.csv"
-        scr_path = os.path.splitext(path)[0] + "_排查.csv"
+        scr_path = os.path.splitext(path)[0] + T("_排查.csv")
         try:
             with open(path, "w", encoding="utf-8-sig", newline="") as f:
                 w = csv.writer(f)
-                w.writerow(["开始时间(s)", "按键", "音名", "唱名", "时长(ms)", "间隔(ms)", "结束方式"])
+                w.writerow([T("开始时间(s)"), T("按键"), T("音名"), T("唱名"),
+                            T("时长(ms)"), T("间隔(ms)"), T("结束方式")])
                 for r in self.notes.rows:
                     t, key, name, sol, dur, ioi, end = r["raw"]
                     w.writerow([f"{t:.3f}", key, name, sol, f"{dur:.0f}", "" if ioi is None else f"{ioi:.0f}", end])
             with open(bpm_path, "w", encoding="utf-8-sig", newline="") as f:
                 w = csv.writer(f)
-                w.writerow(["时间(s)", "BPM"])
+                w.writerow([T("时间(s)"), "BPM"])
                 for t, v in zip(self.chart.t, self.chart.v):
                     w.writerow([f"{t:.1f}", f"{v:.1f}"])
             with open(scr_path, "w", encoding="utf-8-sig", newline="") as f:
                 w = csv.writer(f)
-                w.writerow(["时间(s)", "检查项", "结论", "现象", "说明"])
+                w.writerow([T("时间(s)"), T("检查项"), T("结论"), T("现象"), T("说明")])
                 for r in self.findings.rows:
                     ff = r["f"]
-                    w.writerow([f"{r['t']:.3f}", KIND_TEXT.get(ff["kind"], ff["kind"]), LEVEL_TEXT.get(ff["level"], ""),
+                    w.writerow([f"{r['t']:.3f}", kind_text(ff["kind"]), level_text(ff["level"]),
                                 ff.get("title", ""), ff.get("text", "")])
                 if self._screen_text:
                     w.writerow([])
-                    w.writerow(["总结", self._screen_text])
+                    w.writerow([T("总结"), self._screen_text])
         except OSError as e:
-            QMessageBox.critical(self, "导出失败", f"写入文件失败：{e}")
+            QMessageBox.critical(self, T("导出失败"), T("写入文件失败：{error}", error=e))
             return
-        self.statusBar().showMessage(f"已导出：{os.path.basename(path)}、{os.path.basename(bpm_path)}、"
-                                     f"{os.path.basename(scr_path)}（{os.path.dirname(path)}）", 10000)
+        files = T("、").join([os.path.basename(path), os.path.basename(bpm_path), os.path.basename(scr_path)])
+        self.statusBar().showMessage(T("已导出：{files}（{dir}）", files=files, dir=os.path.dirname(path)), 10000)
 
     def on_clear(self):
         self.key_panel.set_active(set())
@@ -1418,22 +1643,278 @@ class MainWindow(QMainWindow):
             self.worker.screener.reset()
             self.worker._last_screen = None
             self.worker._last_sample_t = -1e9
-        self.statusBar().showMessage("记录已清空")
+        self.statusBar().showMessage(T("记录已清空"))
+
+    # ------------------------------------------------------------ 设置 / 主题 / 更新
+    def apply_theme_change(self):
+        """主题切换后刷新自绘元素与指标卡。"""
+        self.chart.apply_theme()
+        for tile in (self.lab_notes, self.lab_chord, self.lab_key, self.lab_bpm):
+            tile.apply_theme()
+        self.table.viewport().update()
+        self.ftable.viewport().update()
+        self.key_panel.update()
+        self.btn_settings.setIcon(_gear_icon(C["dim"]))
+        self.update()
+
+    def set_theme(self, mode):
+        eff = set_theme_mode(QApplication.instance(), mode)
+        self.cfg["theme"] = mode
+        self.apply_theme_change()
+        return eff
+
+    def on_system_theme_changed(self):
+        if THEME_MODE == "system":
+            apply_theme(QApplication.instance(), "system")
+            self.apply_theme_change()
+
+    def open_settings(self):
+        dlg = SettingsDialog(self)
+        self._settings_dialog = dlg
+        dlg.exec()
+        self._settings_dialog = None
+
+    def check_updates(self, silent=False):
+        if self._update_checker is not None:
+            return
+        if not silent:
+            self.statusBar().showMessage(T("正在检查更新…"))
+        self._update_checker = UpdateChecker(self)
+        self._update_checker.done.connect(lambda p: self._on_update_result(p, silent))
+        self._update_checker.check()
+
+    def _on_update_result(self, payload, silent):
+        self._update_checker = None
+        if not payload.get("ok"):
+            if not silent:
+                self.statusBar().showMessage(
+                    T("检查更新失败：{error}", error=update_error_text(payload)), 12000)
+            return
+        if payload.get("update"):
+            self._update_info = payload
+            self.btn_update.setText(T("更新 v{version}", version=payload.get("latest", "")))
+            self.btn_update.show()
+            if not silent:
+                self.statusBar().showMessage(
+                    T("发现新版本 v{version}", version=payload.get("latest", "")), 12000)
+        else:
+            self._update_info = None
+            self.btn_update.hide()
+            if not silent:
+                self.statusBar().showMessage(T("已是最新版本。"), 8000)
+
+    def _open_release_page(self):
+        url = (self._update_info or {}).get("url") or f"{APP_URL}/releases/latest"
+        if valid_release_url(url):
+            QDesktopServices.openUrl(QUrl(url))
+        else:
+            QDesktopServices.openUrl(QUrl(f"{APP_URL}/releases/latest"))
+
+    def restart_app(self):
+        if self.worker is not None:
+            self.stop_worker()
+        if getattr(sys, "frozen", False):
+            program, args = sys.executable, sys.argv[1:]
+        else:
+            program = sys.executable
+            args = [os.path.abspath(sys.argv[0])] + sys.argv[1:]
+        try:
+            res = QProcess.startDetached(program, args)
+            ok = res[0] if isinstance(res, tuple) else bool(res)
+        except Exception:
+            ok = False
+        if not ok:
+            QMessageBox.critical(self, T("设置"), T("重启失败，请手动重新打开程序。"))
+            return
+        QApplication.quit()
+
+
+def update_error_text(payload: dict) -> str:
+    code = payload.get("error")
+    if code == "timeout":
+        return T("请求超时。")
+    if code == "network":
+        return T("网络请求失败，请检查网络连接或代理设置。")
+    if code == "http":
+        return T("GitHub 返回了异常响应（HTTP {code}）。", code=payload.get("code"))
+    if code in ("json", "version"):
+        return T("更新信息格式不正确。")
+    if code == "too_large":
+        return T("更新信息格式不正确。")
+    return T("未知错误。")
+
+
+class SettingsDialog(QDialog):
+    """设置窗口：语言、主题、更新检查、关于。"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.parent_window = parent
+        self.setWindowTitle(T("设置"))
+        self.setModal(True)
+        self.setMinimumWidth(560)
+        self._orig_theme = parent.cfg.get("theme", "system") if parent else "system"
+        self._release_url = ""
+        self._checker = None
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(18, 16, 18, 14)
+        root.setSpacing(12)
+
+        # 语言
+        lang_box = QGroupBox(T("语言"))
+        lv = QVBoxLayout(lang_box)
+        lv.setContentsMargins(14, 16, 14, 12)
+        self.cmb_lang = QComboBox()
+        for code, label in i18n.LANGUAGES:
+            self.cmb_lang.addItem(label, code)
+        cur = i18n.current()
+        idx = self.cmb_lang.findData(cur)
+        if idx >= 0:
+            self.cmb_lang.setCurrentIndex(idx)
+        lv.addWidget(self.cmb_lang)
+        self.lab_lang_note = QLabel(T("语言更改需要重启应用后生效。"))
+        self.lab_lang_note.setObjectName("cardHint")
+        lv.addWidget(self.lab_lang_note)
+        root.addWidget(lang_box)
+
+        # 主题
+        theme_box = QGroupBox(T("主题"))
+        tv = QVBoxLayout(theme_box)
+        tv.setContentsMargins(14, 16, 14, 12)
+        self.cmb_theme = QComboBox()
+        for mode, label in (("system", T("跟随系统")), ("dark", T("深色")), ("light", T("浅色"))):
+            self.cmb_theme.addItem(label, mode)
+        idx = self.cmb_theme.findData(self._orig_theme)
+        self.cmb_theme.setCurrentIndex(max(0, idx))
+        self.cmb_theme.currentIndexChanged.connect(self._preview_theme)
+        tv.addWidget(self.cmb_theme)
+        root.addWidget(theme_box)
+
+        # 更新
+        upd_box = QGroupBox(T("更新"))
+        uv = QVBoxLayout(upd_box)
+        uv.setContentsMargins(14, 16, 14, 12)
+        uv.setSpacing(8)
+        self.lab_cur = QLabel(T("当前版本：{version}", version=APP_VERSION))
+        uv.addWidget(self.lab_cur)
+        self.chk_updates = QCheckBox(T("自动检查更新"))
+        self.chk_updates.setChecked((parent.cfg.get("check_updates", "1") if parent else "1") == "1")
+        uv.addWidget(self.chk_updates)
+        row = QHBoxLayout()
+        self.btn_check = QPushButton(T("检查更新"))
+        self.btn_check.clicked.connect(self._check_updates)
+        self.btn_open = QPushButton(T("打开下载页面"))
+        self.btn_open.clicked.connect(self._open_release)
+        self.btn_open.hide()
+        row.addWidget(self.btn_check)
+        row.addWidget(self.btn_open)
+        row.addStretch(1)
+        uv.addLayout(row)
+        self.lab_upd = QLabel(T("更新检查由 GitHub Releases 提供。"))
+        self.lab_upd.setObjectName("cardHint")
+        self.lab_upd.setWordWrap(True)
+        uv.addWidget(self.lab_upd)
+        root.addWidget(upd_box)
+
+        # 关于
+        about_box = QGroupBox(T("关于"))
+        av = QHBoxLayout(about_box)
+        av.setContentsMargins(14, 16, 14, 12)
+        av.addWidget(QLabel(f"{T('原神乐器演奏检测器')}  v{APP_VERSION}"))
+        av.addStretch(1)
+        self.btn_home = QPushButton(T("打开项目主页"))
+        self.btn_home.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(APP_URL)))
+        av.addWidget(self.btn_home)
+        root.addWidget(about_box)
+
+        btns = QHBoxLayout()
+        btns.addStretch(1)
+        self.btn_cancel = QPushButton(T("取消"))
+        self.btn_cancel.clicked.connect(self.reject)
+        self.btn_save = QPushButton(T("保存"))
+        self.btn_save.setObjectName("primary")
+        self.btn_save.clicked.connect(self._save)
+        btns.addWidget(self.btn_cancel)
+        btns.addWidget(self.btn_save)
+        root.addLayout(btns)
+
+    def _preview_theme(self):
+        if self.parent_window is not None:
+            self.parent_window.set_theme(self.cmb_theme.currentData())
+
+    def _check_updates(self):
+        self.btn_check.setEnabled(False)
+        self.btn_open.hide()
+        self.lab_upd.setText(T("正在检查更新…"))
+        self._checker = UpdateChecker(self)
+        self._checker.done.connect(self._on_update)
+        self._checker.check()
+
+    def _on_update(self, payload):
+        self.btn_check.setEnabled(True)
+        if not payload.get("ok"):
+            self.lab_upd.setText(T("检查更新失败：{error}", error=update_error_text(payload)))
+            return
+        if payload.get("update"):
+            self._release_url = payload.get("url", "")
+            self.lab_upd.setText(T("发现新版本 v{version}", version=payload.get("latest", "")))
+            self.btn_open.show()
+        else:
+            self._release_url = ""
+            self.btn_open.hide()
+            self.lab_upd.setText(T("已是最新版本。"))
+
+    def _open_release(self):
+        if valid_release_url(self._release_url):
+            QDesktopServices.openUrl(QUrl(self._release_url))
+        else:
+            QDesktopServices.openUrl(QUrl(f"{APP_URL}/releases/latest"))
+
+    def _save(self):
+        lang = self.cmb_lang.currentData()
+        theme = self.cmb_theme.currentData()
+        auto = "1" if self.chk_updates.isChecked() else "0"
+        ok = settings.save({"language": lang, "theme": theme, "check_updates": auto})
+        if not ok:
+            QMessageBox.warning(self, T("设置"), T("设置保存失败，请检查目录权限。"))
+        if self.parent_window is not None:
+            self.parent_window.cfg.update({"language": lang, "theme": theme, "check_updates": auto})
+        changed = lang != i18n.current()
+        self.accept()
+        if changed and self.parent_window is not None:
+            box = QMessageBox(self.parent_window)
+            box.setWindowTitle(T("设置"))
+            box.setText(T("语言更改需要重启应用后生效。"))
+            restart = box.addButton(T("立即重启"), QMessageBox.ButtonRole.AcceptRole)
+            box.addButton(T("稍后"), QMessageBox.ButtonRole.RejectRole)
+            box.exec()
+            if box.clickedButton() is restart:
+                self.parent_window.restart_app()
+
+    def reject(self):
+        if self.parent_window is not None:
+            self.parent_window.set_theme(self._orig_theme)
+        super().reject()
 
 
 def main():
+    i18n.init()
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(APP_VERSION)
     icon_path = _resource_path("app.ico")
     if os.path.exists(icon_path):
         app.setWindowIcon(QIcon(icon_path))
-    apply_theme(app)
+    cfg = settings.load()
+    mode = os.environ.get("GID_THEME") or cfg.get("theme", "system")
+    apply_theme(app, mode)
     w = MainWindow()
     w.show()
-    # 诊断/自动化支持：设置 GID_AUTOSTART=1 时自动开始监听（供测试与远程排查用）
-    if os.environ.get("GID_AUTOSTART") == "1":
-        QTimer.singleShot(600, w.start_worker)
+    try:
+        app.styleHints().colorSchemeChanged.connect(lambda _: w.on_system_theme_changed())
+    except Exception:
+        pass
     sys.exit(app.exec())
 
 

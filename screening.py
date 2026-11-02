@@ -38,12 +38,22 @@ from collections import deque
 
 import numpy as np
 
+from i18n import T
+
 Q_BLOCK = 1024 / 48000.0          # 原神发声块（秒）
 
 LEVEL_LIMIT = "limit"
 LEVEL_SUSPECT = "suspect"
 LEVEL_TEXT = {LEVEL_LIMIT: "超出人手极限", LEVEL_SUSPECT: "疑似机械操作"}
 KIND_TEXT = {"keys": "同时按键", "regular": "机械等间隔"}
+
+
+def level_text(level: str) -> str:
+    return T(LEVEL_TEXT.get(level, level))
+
+
+def kind_text(kind: str) -> str:
+    return T(KIND_TEXT.get(kind, kind))
 
 # 谐波相对基频的电平（dB），用于判断一个新峰是不是更低的键的谐波。录音里有足够多单独按下的音后改用实测值
 HARM_PLUCK = {2: -18.0, 3: -22.0, 4: -30.0, 5: -30.0, 6: -29.0, 7: -28.0}   # 实测：风物之诗琴采样
@@ -382,11 +392,13 @@ class Screener:
         sure = reliable and n >= self.MAX_FINGERS + 2
         f = {"id": self._new_id(), "kind": "keys", "level": LEVEL_LIMIT if sure else LEVEL_SUSPECT,
              "t": t0, "t_end": end, "n": n, "keys": labels,
-             "title": f"同时按下约 {n} 个键",
-             "text": (f"同时按下约 {n} 个键（{' '.join(labels)}），超过人的 10 根手指"
-                      if sure else f"同时按下约 {n} 个键（{' '.join(labels)}），可能超过 10 根手指"
-                                   f"（计数误差约 ±{1 if reliable else 2} 个）")
-                     + "；电脑键盘上一根手指能压住两个相邻键，属强证据而非铁证"}
+             "title": T("同时按下约 {n} 个键", n=n),
+             "text": (T("同时按下约 {n} 个键（{labels}），超过人的 10 根手指；"
+                        "电脑键盘上一根手指能压住两个相邻键，属强证据而非铁证",
+                        n=n, labels=" ".join(labels))
+                      if sure else T("同时按下约 {n} 个键（{labels}），可能超过 10 根手指"
+                                     "（计数误差约 ±{err} 个）；电脑键盘上一根手指能压住两个相邻键，属强证据而非铁证",
+                                     n=n, labels=" ".join(labels), err=1 if reliable else 2))}
         self.findings.append(f)
         return f
 
@@ -515,10 +527,11 @@ class Screener:
         dur = t - f["t"]
         tol_ms = 0.5 * w * unit * 1000.0
         f.update({"t_end": t, "period_ms": period * 1000.0,
-                  "title": f"连续 {cnt} 个音间隔完全一致",
-                  "text": f"约 {period * 1000:.0f} ms 一个音、持续 {dur:.1f} 秒，全部落在完美等间隔 ±{max(tol_ms, 1):.0f} ms 以内"
-                          f"（游戏发声精度）；很稳的人连续这么多音也会偏出（按计时模型模拟，误判概率 < 0.5%），"
-                          f"可能是脚本，也可能是极稳的人，需结合其它证据"})
+                  "title": T("连续 {n} 个音间隔完全一致", n=cnt),
+                  "text": T("约 {ms} ms 一个音、持续 {dur} 秒，全部落在完美等间隔 ±{tol} ms 以内"
+                            "（游戏发声精度）；很稳的人连续这么多音也会偏出（按计时模型模拟，"
+                            "误判概率 < 0.5%），可能是脚本，也可能是极稳的人，需结合其它证据",
+                            ms=f"{period * 1000:.0f}", dur=f"{dur:.1f}", tol=f"{max(tol_ms, 1):.0f}")})
         out.append(f)
         return out
 
@@ -529,14 +542,20 @@ class Screener:
         sus = sum(1 for f in self.findings if f["level"] == LEVEL_SUSPECT)
         parts = []
         if lim or sus:
-            parts.append("发现 " + "、".join(x for x in (f"超出人手极限 {lim} 处" if lim else "",
-                                                        f"疑似机械操作 {sus} 处" if sus else "") if x))
+            pieces = []
+            if lim:
+                pieces.append(T("超出人手极限 {n} 处", n=lim))
+            if sus:
+                pieces.append(T("疑似机械操作 {n} 处", n=sus))
+            parts.append(T("发现 {parts}", parts=T("、").join(pieces)))
         else:
-            parts.append("未发现超出人手极限的操作")
+            parts.append(T("未发现超出人手极限的操作"))
         extra = []
         if self.count_enabled:
-            extra.append(f"最多同时按下约 {self.max_keys} 个键" if self.max_keys else "没有 3 个键以上的同时按下")
+            extra.append(T("最多同时按下约 {n} 个键", n=self.max_keys)
+                         if self.max_keys else T("没有 3 个键以上的同时按下"))
         n, p, _ = self.longest_regular
         if n >= 8 and p:
-            extra.append(f"最长的等间隔连续音 {n} 个（约 {p * 1000:.0f} ms 一个）")
-        return "；".join(parts + extra)
+            extra.append(T("最长的等间隔连续音 {n} 个（约 {ms} ms 一个）",
+                           n=n, ms=f"{p * 1000:.0f}"))
+        return T("；").join(parts + extra)

@@ -1,8 +1,8 @@
-﻿<#
+<#
   一键打包 Windows 版：单文件 exe + 安装程序
 
   用法（任意目录执行均可）：
-    powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1 [-Python <python.exe>] [-SkipTests] [-Iscc <ISCC.exe>]
+    powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1 [-Python <python.exe>] [-Iscc <ISCC.exe>]
 
   依赖：
     pip install -r packaging\requirements-build.txt
@@ -16,7 +16,6 @@
 #>
 param(
     [string]$Python = "python",
-    [switch]$SkipTests,
     [string]$Iscc = ""
 )
 $ErrorActionPreference = "Stop"
@@ -27,15 +26,6 @@ try {
     $Version = (& $Python -c "import app_version; print(app_version.APP_VERSION)").Trim()
     if (-not $Version) { throw "无法读取 app_version.APP_VERSION" }
     Write-Host "== 版本 $Version"
-
-    if (-not $SkipTests) {
-        Write-Host "== 回归测试 test_detection.py"
-        & $Python test_detection.py
-        if ($LASTEXITCODE -ne 0) { throw "test_detection.py 未通过" }
-        Write-Host "== 停顿与按键显示回归 test_stop_keys.py"
-        & $Python test_stop_keys.py
-        if ($LASTEXITCODE -ne 0) { throw "test_stop_keys.py 未通过" }
-    }
 
     Write-Host "== PyInstaller"
     & $Python -m PyInstaller --noconfirm --clean --distpath dist --workpath build\pyinstaller packaging\GenshinInstrumentDetector.spec

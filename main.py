@@ -52,7 +52,17 @@ def _read_wav(path):
     import numpy as np
     with wave.open(path, "rb") as wf:
         ch, sw, sr, n = wf.getnchannels(), wf.getsampwidth(), wf.getframerate(), wf.getnframes()
+        if not (1 <= ch <= 8):
+            raise ValueError("unsupported channel count")
+        if not (8000 <= sr <= 192000):
+            raise ValueError("unsupported sample rate")
+        if sw not in (1, 2, 3, 4):
+            raise ValueError(f"不支持的采样位宽：{sw * 8} bit")
+        if n <= 0 or n * ch * sw > 512 * 1024 * 1024:
+            raise ValueError("recording is empty or too large")
         raw = wf.readframes(n)
+    if len(raw) < n * ch * sw:
+        raise ValueError("truncated WAV data")
     if sw == 1:
         x = (np.frombuffer(raw, dtype=np.uint8).astype(np.float32) - 128.0) / 128.0
     elif sw == 2:
@@ -61,10 +71,8 @@ def _read_wav(path):
         b = np.frombuffer(raw, dtype=np.uint8).reshape(-1, 3).astype(np.int32)
         v = b[:, 0] | (b[:, 1] << 8) | (b[:, 2] << 16)
         x = (np.where(v >= 1 << 23, v - (1 << 24), v)).astype(np.float32) / float(1 << 23)
-    elif sw == 4:
-        x = np.frombuffer(raw, dtype="<i4").astype(np.float32) / float(1 << 31)
     else:
-        raise ValueError(f"不支持的采样位宽：{sw * 8} bit")
+        x = np.frombuffer(raw, dtype="<i4").astype(np.float32) / float(1 << 31)
     if ch > 1:
         x = x.reshape(-1, ch).mean(axis=1)
     return x.astype(np.float32), sr
@@ -74,11 +82,12 @@ def analyze_file(wav_path, out_path=None, inst_name=None):
     """离线分析录音，返回写出的结果文件路径"""
     import numpy as np
     from instruments import all_instruments
-    from detection import NoteDetector, END_REASON_TEXT
-    from screening import Screener, LEVEL_TEXT, KIND_TEXT
+    from detection import NoteDetector, end_reason_text
+    from screening import Screener, level_text, kind_text
+    from i18n import T
 
     insts = all_instruments()
-    inst = next((i for i in insts if i.name == inst_name), insts[0])
+    inst = next((i for i in insts if i.name == inst_name or T(i.name) == inst_name), insts[0])
     x, sr = _read_wav(wav_path)
     det = NoteDetector(inst, sr=sr, sensitivity=0.55)
     scr = Screener(inst, sr=sr)
@@ -113,28 +122,37 @@ def analyze_file(wav_path, out_path=None, inst_name=None):
         bpm = bpm_track[-1][0]
 
     if out_path is None:
-        out_path = os.path.splitext(wav_path)[0] + "_分析.txt"
+        base = os.path.splitext(wav_path)[0]
+        suffix = T("_分析.txt")
+        out_path = base + suffix
+        n = 2
+        while os.path.exists(out_path):
+            out_path = f"{base} ({n}){suffix}"
+            n += 1
+    bpm_text = "—" if bpm is None else f"{bpm:.1f}"
     lines = [
-        f"原神乐器演奏检测器 v{APP_VERSION} 离线分析",
-        f"文件：{os.path.abspath(wav_path)}",
-        f"时长：{len(x) / sr:.2f} s　采样率：{sr} Hz　乐器：{inst.name}",
-        f"BPM：{'—' if bpm is None else f'{bpm:.1f}'}　调性：{tonality or '—'}　音符数：{len(events)}",
+        T("原神乐器演奏检测器 v{version} 离线分析", version=APP_VERSION),
+        T("文件：{path}", path=os.path.abspath(wav_path)),
+        T("时长：{dur} s　采样率：{sr} Hz　乐器：{inst}",
+          dur=f"{len(x) / sr:.2f}", sr=sr, inst=T(inst.name)),
+        T("BPM：{bpm}　调性：{tonality}　音符数：{n}",
+          bpm=bpm_text, tonality=tonality or "—", n=len(events)),
         "",
-        "开始(s)\t按键\t音名\t时长(ms)\t间隔(ms)\t结束方式",
+        "\t".join([T("开始时间(s)"), T("按键"), T("音名"), T("时长(ms)"), T("间隔(ms)"), T("结束方式")]),
     ]
     for e in events:
         ioi = "—" if e.get("ioi_ms") is None else f"{e['ioi_ms']:.0f}"
-        end = END_REASON_TEXT.get(e.get("end"), e.get("end") or "")
+        end = end_reason_text(e.get("end"))
         lines.append(f"{e['t']:.3f}\t{e['key']}\t{e['name']}\t{e['dur_ms']:.0f}\t{ioi}\t{end}")
     # 边界值排查：超出人手极限的操作（证据，不是定论）
-    lines += ["", f"边界值排查：{scr.summary()}"]
+    lines += ["", T("边界值排查：{summary}", summary=scr.summary())]
     if found:
-        lines.append("时间(s)\t检查项\t结论\t现象\t说明")
+        lines.append("\t".join([T("时间(s)"), T("检查项"), T("结论"), T("现象"), T("说明")]))
         for f in sorted(found.values(), key=lambda f: f["t"]):
-            lines.append(f"{f['t']:.3f}\t{KIND_TEXT.get(f['kind'], f['kind'])}\t{LEVEL_TEXT.get(f['level'], '')}\t"
+            lines.append(f"{f['t']:.3f}\t{kind_text(f['kind'])}\t{level_text(f['level'])}\t"
                          f"{f['title']}\t{f['text']}")
     # BPM 随时间：每秒一个读数（与实时界面上看到的一致：起音进入 BPM 计算有约 0.2 s 延迟）
-    lines += ["", "BPM 随时间（每秒读数）", "时间(s)\tBPM"]
+    lines += ["", T("BPM 随时间（每秒读数）"), "\t".join([T("时间(s)"), "BPM"])]
     k, cur = 0, None
     for s in range(1, int(len(x) / sr) + 1):
         while k < len(bpm_curve) and bpm_curve[k][0] <= s:
@@ -148,6 +166,8 @@ def analyze_file(wav_path, out_path=None, inst_name=None):
 
 def main():
     _setup_logging()
+    from i18n import init as i18n_init
+    i18n_init()
     args = sys.argv[1:]
     if args and args[0] in ("--analyze", "-a"):
         if len(args) < 2:

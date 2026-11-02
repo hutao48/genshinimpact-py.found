@@ -1,0 +1,219 @@
+# -*- coding: utf-8 -*-
+"""English translations keyed by the Chinese source string."""
+EN = {
+    "原神乐器演奏检测器": "Genshin Instrument Detector",
+    "原神乐器演奏检测器 v{version} 离线分析": "Genshin Instrument Detector v{version} — Offline analysis",
+    "风物之诗琴": "Windsong Lyre",
+    "镜花之琴": "Floral Zither",
+    "跃律琴": "Vintage Lyre",
+    "谐律键琴": "Harmonic Keys",
+    "晚风圆号": "Nightwind Horn",
+    "悠可琴": "Ukulele",
+
+    # 顶栏 / 设置条
+    "○  未在监听": "○  Not listening",
+    "●  正在启动…": "●  Starting…",
+    "●  采集出错": "●  Capture error",
+    "▶  开始监听": "▶  Start listening",
+    "■  停止监听": "■  Stop listening",
+    "导出记录": "Export",
+    "清空记录": "Clear",
+    "设置": "Settings",
+    "排查  未发现异常": "Check  No issues",
+    "排查  ⚠ 超出人手极限 {n} 处": "Check  ⚠ {n} beyond human limits",
+    "排查  ⚠ 疑似机械操作 {n} 处": "Check  ⚠ {n} suspected mechanical input",
+    " · 疑似 {n} 处": " · {n} suspected",
+    "边界值排查：找出超出人手极限的操作（点击查看）": "Boundary check: find operations beyond human limits (click to view)",
+    "把每个音的时长表、BPM 随时间的记录、边界值排查结果导出为 CSV（Excel 可直接打开）":
+        "Export the note duration table, BPM history and boundary-check results as CSV files (opens directly in Excel)",
+    "乐器": "Instrument",
+    "移调": "Transpose",
+    "音高基准校准（半音）。若检测出的八度与实际不符，用此项整体平移。":
+        "Pitch-reference calibration in semitones. If the detected octave is off, shift everything here.",
+    "采集设备": "Capture device",
+    "刷新": "Refresh",
+    "重新扫描扬声器 / 麦克风": "Rescan speakers / microphones",
+    "灵敏度": "Sensitivity",
+    "提示": "Notice",
+    "未找到可用采集设备。": "No capture device available.",
+    "请先刷新并选择采集设备。": "Refresh and select a capture device first.",
+    "采集错误": "Capture error",
+
+    # 卡片 / 指标 / 图表 / 表格
+    "琴键": "Keyboard",
+    "高亮 = 正在发音": "Highlighted = sounding",
+    "当前按键": "Current keys",
+    "和弦": "Chord",
+    "调性": "Key",
+    "当前 BPM": "Current BPM",
+    "BPM 变化": "BPM history",
+    "每 0.5 秒一个点，纵轴随数据自动缩放，鼠标悬停看具体读数":
+        "One point every 0.5 s; the y-axis auto-scales; hover to read a value",
+    "每个音的时长": "Note durations",
+    "每个音的时长  {n}": "Note durations  {n}",
+    "边界值排查": "Boundary check",
+    "边界值排查  {n}": "Boundary check  {n}",
+    "高音": "High",
+    "中音": "Mid",
+    "低音": "Low",
+    "和弦键 {key}：{chord}": "Chord key {key}: {chord}",
+    "键 {key} = {note}": "Key {key} = {note}",
+    "30 秒": "30 s",
+    "1 分钟": "1 min",
+    "5 分钟": "5 min",
+    "全部": "All",
+    "当前": "Current",
+    "平均": "Avg",
+    "最低": "Min",
+    "最高": "Max",
+    "当前  {value}": "Current  {value}",
+    "平均  {value}": "Avg  {value}",
+    "最低  {value}": "Min  {value}",
+    "最高  {value}": "Max  {value}",
+    "全程 {lo} – {hi}": "All {lo} – {hi}",
+    "近 {range} {lo} – {hi}": "Last {range}: {lo} – {hi}",
+    "开始演奏后，这里会实时画出 BPM 随时间的变化": "BPM over time will appear here once you start playing",
+    "开始时间": "Start time",
+    "开始时间(s)": "Start time (s)",
+    "按键": "Key",
+    "音名": "Note",
+    "唱名": "Solfège",
+    "时长(ms)": "Duration (ms)",
+    "间隔(ms)": "Gap (ms)",
+    "结束方式": "End reason",
+    "时间": "Time",
+    "时间(s)": "Time (s)",
+    "检查项": "Check",
+    "结论": "Verdict",
+    "现象": "Details",
+    "说明": "Description",
+    "总结": "Summary",
+    "开始监听后的时间（分:秒.毫秒），对齐到敲击瞬间":
+        "Time since monitoring started (min:s.ms), aligned to the actual strike",
+    "起音 → 结束。结束方式为「松键/截止」时即按键时长；「同键重按」时为到再次按下的时间；\n"
+    "「余音自然衰减」表示拨弦类余音自然消失，松键时刻在声音里不可观测，此时长是余音长度":
+        "Onset → end. For \"Key release / cutoff\", this is the key hold time; for \"Same-key re-press\", "
+        "the time until the next press;\n\"Natural decay\" means a plucked note faded out naturally — "
+        "the release moment is unobservable, so this is the audible decay length.",
+    "与上一个起音的间隔（和弦算一次起音），BPM 由它计算":
+        "Time since the previous onset (a chord counts once); BPM is derived from this",
+    "超出人手极限：人做不到（例如同时按下超过 10 个键）\n疑似机械操作：人极难做到，需结合其它证据判断":
+        "Beyond human limits: a human cannot do it (e.g. pressing more than 10 keys at once)\n"
+        "Suspected mechanical input: extremely difficult for a human; combine with other evidence",
+    "还没有数据。": "No data yet.",
+    "最新在上 · 鼠标停在一行上看完整说明": "Newest first · hover a row for the full description",
+    "最新在上，最多保留 {n} 条": "Newest first, up to {n} rows",
+    "演奏后逐条记录每个音": "Each note is logged here as you play",
+    "就没有数据。": "No data yet.",
+
+    # 状态 / 错误
+    "就绪 — 选择乐器与采集设备后点击「开始监听」":
+        "Ready — choose an instrument and capture device, then click \"Start listening\"",
+    "正在初始化采集设备…": "Initializing capture device…",
+    "正在监听": "Listening",
+    "正在监听【{mode}】… 请演奏乐器": "Listening on [{mode}]… play the instrument",
+    "已停止": "Stopped",
+    "扬声器输出(回环)": "Speaker output (loopback)",
+    "麦克风": "Microphone",
+    "连续读取音频失败，采集已中断。请刷新设备后重试。":
+        "Reading audio failed repeatedly; capture stopped. Refresh the device and try again.",
+    "打开采集设备失败：{error}\n请检查设备是否被占用，或点击「刷新」重选设备。":
+        "Could not open the capture device: {error}\nCheck whether it is in use, or click \"Refresh\" to choose another device.",
+    "采集线程异常：{error}": "Capture thread error: {error}",
+    "记录已清空": "Records cleared",
+    "已导出：{files}（{dir}）": "Exported: {files} ({dir})",
+    "还没有记录可以导出。": "There are no records to export yet.",
+    "CSV 表格 (*.csv)": "CSV files (*.csv)",
+    "导出失败": "Export failed",
+    "写入文件失败：{error}": "Could not write the file: {error}",
+    "演奏记录_{timestamp}.csv": "performance_{timestamp}.csv",
+    "_排查.csv": "_checks.csv",
+    "_分析.txt": "_analysis.txt",
+    "（扬声器输出·回环）": "(Speaker output · loopback)",
+    "（麦克风）": "(Microphone)",
+    "（未找到可用采集设备）": "(No capture device found)",
+
+    # 结果文本
+    "松键/截止": "Key release / cutoff",
+    "同键重按": "Same-key re-press",
+    "余音自然衰减": "Natural decay",
+    "≈吸附": "≈snapped",
+    "{note} 大调": "{note} major",
+    "{note} 小调": "{note} minor",
+    "{name}（与 {other} 难分）": "{name} (hard to distinguish from {other})",
+    "{name}（置信 {pct}%）": "{name} ({pct}% confidence)",
+    "分析中…（音符不足）": "Analyzing… (not enough notes)",
+    "超出人手极限": "Beyond human limits",
+    "疑似机械操作": "Suspected mechanical input",
+    "同时按键": "Simultaneous keys",
+    "机械等间隔": "Mechanical even spacing",
+    "同时按下约 {n} 个键": "About {n} keys pressed at once",
+    "同时按下约 {n} 个键（{labels}），超过人的 10 根手指；电脑键盘上一根手指能压住两个相邻键，属强证据而非铁证":
+        "About {n} keys pressed at once ({labels}), more than a human's 10 fingers; one finger can hold "
+        "two adjacent keys on a computer keyboard, so this is strong evidence rather than conclusive proof",
+    "同时按下约 {n} 个键（{labels}），可能超过 10 根手指（计数误差约 ±{err} 个）；电脑键盘上一根手指能压住两个相邻键，属强证据而非铁证":
+        "About {n} keys pressed at once ({labels}), possibly more than 10 fingers (counting error about ±{err}); "
+        "one finger can hold two adjacent keys on a computer keyboard, so this is strong evidence rather than conclusive proof",
+    "连续 {n} 个音间隔完全一致": "{n} consecutive notes with perfectly even gaps",
+    "约 {ms} ms 一个音、持续 {dur} 秒，全部落在完美等间隔 ±{tol} ms 以内（游戏发声精度）；"
+    "很稳的人连续这么多音也会偏出（按计时模型模拟，误判概率 < 0.5%），可能是脚本，也可能是极稳的人，需结合其它证据":
+        "About {ms} ms per note for {dur} s, all within ±{tol} ms of a perfectly even grid (the game's "
+        "audio-block resolution); even a very steady human would drift over this many notes (timing-model "
+        "false-positive rate < 0.5%). This may be a script or an extremely steady player; combine with other evidence.",
+    "发现 {parts}": "Found {parts}",
+    "超出人手极限 {n} 处": "{n} beyond human limits",
+    "疑似机械操作 {n} 处": "{n} suspected mechanical input",
+    "未发现超出人手极限的操作": "No operations beyond human limits found",
+    "最多同时按下约 {n} 个键": "At most about {n} keys at once",
+    "没有 3 个键以上的同时按下": "No simultaneous press of 3+ keys",
+    "最长的等间隔连续音 {n} 个（约 {ms} ms 一个）": "Longest evenly spaced run: {n} notes (about {ms} ms each)",
+    "、": ", ",
+    "；": "; ",
+    "检查两类超出人手极限的操作：① 同时按下超过 10 个键（人只有 10 根手指）；"
+    "② 很长一段连续音的间隔完全一致（机器级精度）。原神的声音按约 21 ms 一块发出，"
+    "短的轮指人手也会显得完全一致，所以只报很长的段。结果是证据而非定论。":
+        "Two kinds of operations beyond human limits are checked: (1) more than 10 keys pressed at once "
+        "(a human has only 10 fingers); (2) a very long run of notes with perfectly even gaps "
+        "(machine-level precision). Genshin emits audio in blocks of about 21 ms, so even a short human "
+        "trill looks perfectly even; therefore only long runs are reported. Results are evidence, not a verdict.",
+
+    # 设置 / 更新
+    "语言": "Language",
+    "主题": "Theme",
+    "跟随系统": "Follow system",
+    "深色": "Dark",
+    "浅色": "Light",
+    "更新": "Updates",
+    "关于": "About",
+    "保存": "Save",
+    "取消": "Cancel",
+    "当前版本：{version}": "Current version: {version}",
+    "自动检查更新": "Check for updates on startup",
+    "检查更新": "Check for updates",
+    "正在检查更新…": "Checking for updates…",
+    "已是最新版本。": "You are up to date.",
+    "发现新版本 v{version}": "New version v{version} available",
+    "检查更新失败：{error}": "Update check failed: {error}",
+    "打开下载页面": "Open download page",
+    "更新检查由 GitHub Releases 提供。": "Update checks use GitHub Releases.",
+    "更新 v{version}": "Update v{version}",
+    "语言更改需要重启应用后生效。": "Changing the language takes effect after restarting the app.",
+    "立即重启": "Restart now",
+    "稍后": "Later",
+    "重启失败，请手动重新打开程序。": "Restart failed. Please reopen the app manually.",
+    "设置保存失败，请检查目录权限。": "Could not save settings. Check the folder permissions.",
+    "请求超时。": "The request timed out.",
+    "网络请求失败，请检查网络连接或代理设置。": "Network request failed. Check your connection or proxy settings.",
+    "GitHub 返回了异常响应（HTTP {code}）。": "GitHub returned an unexpected response (HTTP {code}).",
+    "更新信息格式不正确。": "The update information is malformed.",
+    "未知错误。": "Unknown error.",
+    "打开项目主页": "Open project page",
+
+    # 离线报告
+    "文件：{path}": "File: {path}",
+    "时长：{dur} s　采样率：{sr} Hz　乐器：{inst}": "Length: {dur} s | Sample rate: {sr} Hz | Instrument: {inst}",
+    "BPM：{bpm}　调性：{tonality}　音符数：{n}": "BPM: {bpm} | Key: {tonality} | Notes: {n}",
+    "边界值排查：{summary}": "Boundary check: {summary}",
+    "BPM 随时间（每秒读数）": "BPM over time (per-second readings)",
+    "边界值排查：{time}  {title}（{level}）": "Boundary check: {time}  {title} ({level})",
+}

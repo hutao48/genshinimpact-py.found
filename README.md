@@ -1,20 +1,35 @@
 # Genshin Instrument Performance Detector
 
-**Version**: Windows 1.0.3 / Android 1.0.2 | Download: [GitHub Releases](https://github.com/hutao48/genshinimpact-py.found/releases/latest) | [Chinese user guide (中文使用说明)](使用说明.md)
+**Version**: Windows 1.0.4 / Android 1.0.3 | **Website**: [hutao48.github.io/genshinimpact-py.found](https://hutao48.github.io/genshinimpact-py.found/) | **Downloads**: [GitHub Releases](https://github.com/hutao48/genshinimpact-py.found/releases/latest) | [Chinese user guide (中文使用说明)](使用说明.md)
 
-> **Note**: The application interface is currently in Simplified Chinese.
+> The application starts in Simplified Chinese on Chinese systems and English on other systems. You can switch between **简体中文 / 繁體中文 / 正體中文（臺灣）/ English / 日本語** in **Settings**.
 
-| Download | Description |
-|---|---|
-| `GenshinInstrumentDetector-1.0.3-win64-setup.exe` | Windows installer (installs into the current user's folder, no administrator rights required; creates Start Menu/desktop shortcuts and an uninstaller) |
-| `GenshinInstrumentDetector-1.0.3-win64-portable.exe` | Windows portable single-file build; just double-click to run |
-| `GenshinInstrumentDetector-1.0.2-android.apk` | Android package (package-installation verification may need to be disabled; every build is signed with a different key, so uninstall the old version before upgrading) |
+## Downloads
 
-**Release notes**:
-- Windows 1.0.3: Fixed quiet background sound after a pause being mistaken for a new keypress. The threshold for new keys is now learned from confirmed onsets and held during pauses. The keyboard display now shows the current state of the last audio frame, so keys whose notes already ended inside a batch are no longer highlighted. After lowering the playback volume a lot, stop and restart monitoring to re-learn the level.
-- 1.0.2: Added **boundary check** (more than 10 keys pressed at once, or a very long run of perfectly even note gaps, as evidence for judging whether a script is being used); BPM now follows tempo changes — it catches up about 1–1.5 s after a change (the old version could sit still for a dozen seconds when the tempo changed often), and rapid consecutive notes no longer get stuck below 300. The UI became a dark card layout; the BPM chart auto-scales its vertical axis, supports switching the displayed range, and shows a readout on hover; records are kept longer (BPM for 4 hours, duration table up to 20,000 rows) and can be exported to CSV.
-- 1.0.1: With game background noise, sound effects and background music present, key durations are no longer frequently cut off, split into fragments, or falsely reported as "key release/cutoff".
-- 1.0.0: Rewrote BPM and per-note duration detection (onsets aligned to the actual strike, repeated presses of the same key split individually, end reason labeled, BPM estimated from merged chords); added a Windows installer and offline analysis (`--analyze recording.wav`).
+| Platform | File | Notes |
+|---|---|---|
+| Windows | `GenshinInstrumentDetector-1.0.4-win64-setup.exe` | Installer (per-user, no administrator; Start Menu/desktop shortcuts and uninstaller) |
+| Windows | `GenshinInstrumentDetector-1.0.4-win64-portable.exe` | Portable single file; double-click to run |
+| Android | `GenshinInstrumentDetector-1.0.3-android.apk` | Android 7.0+; this release is a version/security update, the new desktop Settings features are not included |
+| Checksums | `SHA256SUMS.txt` | SHA-256 for all release files |
+
+Direct links:
+
+- **Windows installer** — <https://github.com/hutao48/genshinimpact-py.found/releases/download/v1.0.4/GenshinInstrumentDetector-1.0.4-win64-setup.exe>
+- **Windows portable** — <https://github.com/hutao48/genshinimpact-py.found/releases/download/v1.0.4/GenshinInstrumentDetector-1.0.4-win64-portable.exe>
+- **Android APK** — <https://github.com/hutao48/genshinimpact-py.found/releases/download/v1.0.4/GenshinInstrumentDetector-1.0.3-android.apk>
+
+The executables are not code-signed, so Windows SmartScreen may show "Unknown publisher"; choose **More info → Run anyway**. The APK uses a per-build debug key: uninstall the previous version before upgrading.
+
+## What's New in 1.0.4
+
+- **Settings window** (gear button in the top bar): language, theme and updates in one place.
+- **5 interface languages**: 简体中文, 繁體中文, 正體中文（臺灣）, English, 日本語. Detection results, tables, CSV exports and offline reports follow the selected language; a restart applies the change.
+- **Theme switching**: follow system, dark, or light. The keyboard, metric cards, BPM chart and tables all have light-theme colors.
+- **Update check**: queries this repository's GitHub Releases, shows the current/latest version and opens the download page. It never downloads or executes files automatically; startup checks can be disabled.
+- **Security hardening**: bounded HTTPS update request, validated release URLs, settings stored in an INI file under `%LOCALAPPDATA%` (no registry), Android backup/cleartext traffic disabled.
+- **Repository cleanup**: all test/evaluation sources, test recordings and synthetic fixtures were removed; the Windows build no longer runs the removed regression scripts.
+- **Android 1.0.3**: version bump and security hardening only. The two platforms keep the same detection algorithm.
 
 ---
 
@@ -42,7 +57,7 @@ For every performance, the app shows:
 
 ## 2. Quick Start
 
-1. Run `GenshinInstrumentDetector-1.0.3-win64-setup.exe` and launch the app from the Start Menu/desktop, or double-click the portable exe (the first launch takes about 2–5 s because the single-file build extracts itself).
+1. Run `GenshinInstrumentDetector-1.0.4-win64-setup.exe` and launch the app from the Start Menu/desktop, or double-click the portable exe (the first launch takes about 2–5 s because the single-file build extracts itself).
 2. Choose an **instrument** at the top (Windsong Lyre by default).
 3. The **capture device** is already set to "Speaker output · loopback" — it listens to everything played through the speakers, so in-game performances are captured automatically, **with no extra configuration**.
 4. Click **▶ Start listening**, then play in the game.
@@ -52,7 +67,23 @@ For every performance, the app shows:
 
 ---
 
-## 3. Instrument Key Layouts
+## 3. Settings (New in 1.0.4)
+
+Open the gear button in the top-right corner. All options are in one dialog:
+
+| Section | Option | Behavior |
+|---|---|---|
+| Language | 简体中文 / 繁體中文 / 正體中文（臺灣）/ English / 日本語 | Applies after restarting the app; all UI text, analysis results, CSV headers and offline reports use the selected language |
+| Theme | Follow system / Dark / Light | Applies immediately; "Follow system" tracks the Windows dark-mode setting |
+| Updates | Check for updates on startup | Off by default; when enabled, the app checks GitHub Releases at startup. The check only queries GitHub Releases |
+| Updates | Check for updates / Open download page | Manual check; shows current/latest version and opens the release page when a newer version exists |
+| About | Open project page | Opens this repository |
+
+Settings are stored at `%LOCALAPPDATA%\GenshinInstrumentDetector\settings.ini`. Missing or malformed files fall back to defaults; no registry entries are written.
+
+---
+
+## 4. Instrument Key Layouts
 
 ### 21-key instruments (Windsong Lyre / Floral Zither / Vintage Lyre / Harmonic Keys)
 
@@ -81,7 +112,7 @@ Three rows of white keys covering the C major scale:
 
 ---
 
-## 4. Listening to Speaker Output (and Other Devices)
+## 5. Listening to Speaker Output (and Other Devices)
 
 - **Default mode — speaker output · loopback**: The app uses Windows WASAPI loopback capture to record **everything any application plays through the speakers**. In-game performances and any audio played on this machine are recognized directly. This is the recommended, zero-configuration mode.
 - **Alternative mode — microphone**: Every entry marked "(Microphone)" in the device drop-down can be selected. The app then captures from a microphone or line input, which lets you listen to sound played by **another computer or an external device**:
@@ -91,7 +122,7 @@ Three rows of white keys covering the C major scale:
 
 ---
 
-## 5. Interface Guide
+## 6. Interface Guide
 
 | Area | Contents |
 |---|---|
@@ -101,8 +132,9 @@ Three rows of white keys covering the C major scale:
 | Note durations | Table: start time (min:s.ms) / key / note name / solfège / duration (ms) / gap (ms) / end reason, newest first, up to 20,000 rows (see "How durations and BPM are defined" below) |
 | Transpose | Pitch-reference calibration in semitones (−12 to +12); shift everything if detected pitches do not match the real ones |
 | Clear | Clears the table, BPM history and live readouts |
-| Export | Exports the duration table, BPM history and boundary-check results as CSV files (open directly in Excel): `演奏记录_日期_时间.csv` plus matching `_BPM.csv` and `_排查.csv` files |
+| Export | Exports the duration table, BPM history and boundary-check results as CSV files (open directly in Excel): `performance_<date>_<time>.csv` plus matching `_BPM.csv` and `_checks.csv` files |
 | Boundary check | The second tab next to the duration table (also reachable by clicking the "Check" status in the top bar): lists operations that exceed human limits; see "Boundary check" below |
+| Settings (gear) | Language, theme, update check and about |
 
 **How durations and BPM are defined**
 
@@ -120,11 +152,10 @@ This only reports evidence; it does not draw conclusions. There are two levels: 
 
 - **More than 10 keys pressed at the same time** (a human has only 10 fingers): notes whose onsets are within 45 ms of each other count as one press; the spectra before and after that press are compared, and the number of new spectral peaks at each key's fundamental is counted. Peaks that can be explained as harmonics of a lower key, obvious "ghost notes" much weaker than neighboring keys, and notes that only start after the press are not counted; harmonic levels are learned automatically from notes played alone in the recording. The count error is about ±1 key (larger when other notes follow immediately), so "Beyond human limits" is reported only at ≥ 12; 11 is reported as "Suspected". Note that one finger can press two adjacent keys on a computer keyboard, so this is strong evidence, not conclusive proof. The Ukulele has chord keys (one key sounds several notes) and is excluded from this check; the horn has strong harmonics and tends to undercount.
 - **A very long run of notes with perfectly even gaps** (machine-level precision): Genshin emits audio in blocks of about 21 ms (1024 samples), so key times snap to block boundaries and human timing errors of a dozen milliseconds are invisible in the recording — **even a short trill played by a human looks "perfectly even"**. Therefore only long runs are reported: N consecutive onsets that all match a perfectly even timeline within one audio block, with N calibrated by tempo (for example, 52 notes at about 300 ms per note, 66 at about 120 ms; longer when the tempo is close to an integer multiple of the audio block, and some tempos are not judged at all). The calibration uses a human timing model that simulates a very steady player performing a 240-note run; the false-positive probability is < 0.5%. If the game reads keys per frame, a script is also disturbed by frames, so this check can miss it (but it will not falsely accuse).
-- Measured results (`python eval_screening.py`): among 240 presses of chords with ≤ 10 keys, 0 were reported as "Beyond human limits" and 2 as "Suspected" (when a melody followed immediately, 9- and 10-key chords were each estimated at 11 once); 22 of 24 12-key lyre chords were reported (20 as "Beyond human limits"), and 21 of 24 14-key chords; the horn undercounts, and a 14-key chord was reported only as "Suspected"; script-style long runs were reported in 30 of 32 cases, while 64 simulated human long runs produced 0 false positives; 7 real recordings (including one hand-played recording with frequent tempo changes) produced 0 findings.
 
 ---
 
-## 6. FAQ
+## 7. FAQ
 
 | Symptom | What to do |
 |---|---|
@@ -132,16 +163,17 @@ This only reports evidence; it does not draw conclusions. There are two levels: 
 | No notes detected | Raise the sensitivity; make sure the volume is not muted; turn up the in-game performance volume |
 | False positives / constant jumping | Lower the sensitivity; close software that plays music in the background; check whether other sounds are playing |
 | Pitches are consistently wrong (an octave too high/low) | Use **Transpose** to shift within ±12 semitones |
-| Antivirus warning | PyInstaller single-file builds are sometimes flagged by antivirus software; add an exception. The app does not access the network or write to the registry |
+| Antivirus warning | PyInstaller single-file builds are sometimes flagged by antivirus software; add an exception. The app does not access the network except when checking for updates, and does not write to the registry |
 | The app misbehaves | Log file: `%LOCALAPPDATA%\GenshinInstrumentDetector\app.log`; check it when troubleshooting |
+| Update check fails | Check the network/proxy connection; the check uses GitHub's public API and is optional |
 
 **Diagnostic mode**: Set the environment variable `GID_DEBUG=1` before running the EXE; device opening and runtime status are then written to the log for remote troubleshooting.
 
-**Offline analysis of a recording**: `原神乐器演奏检测器.exe --analyze recording.wav [result.txt] [instrument name]`. The result is written by default next to the recording as "<recording name>_分析.txt" (start time, key, duration, gap and end reason for every note, plus BPM, key, boundary-check results and a per-second BPM reading). To extract the audio from someone else's performance video, use ffmpeg first: `ffmpeg -i video.mp4 -vn -ac 1 -ar 48000 recording.wav`.
+**Offline analysis of a recording**: `原神乐器演奏检测器.exe --analyze recording.wav [result.txt] [instrument name]`. The result is written by default next to the recording as "<recording name>_analysis.txt" for English, or the localized equivalent (start time, key, duration, gap and end reason for every note, plus BPM, key, boundary-check results and a per-second BPM reading). To extract the audio from someone else's performance video, use ffmpeg first: `ffmpeg -i video.mp4 -vn -ac 1 -ar 48000 recording.wav`.
 
 ---
 
-## 7. Technical Notes (Brief)
+## 8. Technical Notes (Brief)
 
 - **Capture**: WASAPI loopback/microphone dual mode, 48 kHz, 2048 samples per block; **all timestamps use the audio sample clock** (real-time and offline results agree, unaffected by read jitter).
 - **Detection**: FFT (4096 + 16384 zero-padding) extracts fundamentals and harmonic structure, tracked key by key; an attack threshold plus harmonic-structure validation rejects background noise; four consecutive frames are required for confirmation.
@@ -156,38 +188,38 @@ This only reports evidence; it does not draw conclusions. There are two levels: 
 - **BPM tempo following (1.0.2)**: switch when the last 6 onsets consistently point to a new tempo, starting a new tempo segment at the change (about 1–1.5 s to catch up; the old version took 4–6 s, or even a dozen seconds when the tempo changed often); within a segment, a weighted estimate with only minor adjustments, so accuracy at a steady tempo is unchanged; when the new and old tempos are integer multiples (which may just be denser/sparser notes), a longer persistence is required to switch (0.8 s faster, 3.2 s slower) to avoid doubling back; for rapid consecutive runs the period floor is lowered from 0.2 s to 0.07 s (readings up to about 850, no longer stuck below 300); when there is a lot of noise and the reading has long lacked support from recent onsets, a 12 s long-window estimate is used instead.
 - **Tonality (improved in 1.0.2)**: Krumhansl-Schmuckler key-profile matching over the last 20 s and at least 6 notes; each note is weighted by its "occupied time" (until the next note) rather than its decay length, with extra weight for bass notes and phrase-ending notes (followed by a pause); these Genshin instruments have only white keys, so the candidates are limited to C major / A minor (the app never reports a key that cannot be played on the instrument); confidence = how far the first candidate leads the second, showing "hard to distinguish from X" when they are close; a new key must lead for 2.5 s before the display switches.
 - **Chords (improved in 1.0.2)**: only the most recent group of simultaneously pressed notes is considered (previously ringing notes and melody notes played on top of the chord afterwards do not count); arpeggios accumulate from the most recent bass note; a monophonic melody (steps above the bass) is not reported as a chord; common triads/sevenths are preferred, a bass note that is the root gets a bonus, and inversions are shown (e.g., C/E); ghost notes at adjacent frequencies caused by the strike do not participate; a change must persist for 0.15 s before the display switches.
-- **Evaluation**: `python test_detection.py` (synthetic-audio regression tests with assertions); `python benchmark_timing.py --old` (timing-accuracy benchmark with ground truth, compared against the git HEAD version); `python benchmark_timing.py --noise --old` (sensitivity comparison of the duration module under background noise/sound effects/music); `python benchmark_timing.py --tempo --old` (how quickly BPM follows frequent tempo changes and whether it jumps at a steady tempo); `python eval_harmony.py` (chord/tonality algorithms compared with the old version); `python eval_screening.py` (boundary check: large-chord counting, script detection and human false positives for long runs, real recordings).
+- **Localization**: `i18n.py` uses Chinese source strings as message IDs; `locales/` contains English, Japanese, Traditional Chinese and Taiwan-specific override tables. Language changes restart the app so analysis results and UI language cannot mix.
+- **Updates/security**: `updater.py` queries `https://api.github.com/repos/hutao48/genshinimpact-py.found/releases/latest` over HTTPS with a 12 s timeout and a 512 KB response cap; release URLs are validated against the repository prefix. No update is downloaded or executed automatically.
 
 ---
 
-## 8. Source Layout
+## 9. Source Layout
 
 ```
 ├── main.py               Entry point + exception logging + offline analysis (--analyze)
 ├── app_version.py        Version number (shared by the UI, exe properties and installer)
-├── ui_main.py            PySide6 UI
+├── ui_main.py            PySide6 UI (themes, settings dialog, i18n wiring)
+├── i18n.py               Translation layer (T(), language detection, fallback)
+├── locales/              English / Japanese / Traditional Chinese catalogs
+├── settings.py           INI settings (language, theme, update checks)
+├── updater.py            GitHub Releases update checker (HTTPS, bounded)
 ├── audio_capture.py      Audio capture (loopback/microphone)
 ├── detection.py          Detection engine
 ├── screening.py          Boundary check (operations beyond human limits)
 ├── instruments.py        Instrument definitions and key layouts
 ├── diag.py               Optional diagnostic log (GID_DEBUG=1)
-├── test_detection.py     Regression tests (5 synthetic-audio groups + 4 boundary-check groups, with assertions)
-├── test_stop_keys.py     Pause/background-noise and key-display regression tests
-├── benchmark_timing.py   Timing-accuracy benchmark (onset/duration/BPM vs. ground truth; --old compares with the old version, --noise covers noise scenarios, --tempo covers frequent tempo changes)
-├── eval_recordings.py    Old/new comparison on real recordings
-├── eval_harmony.py       Chord/tonality algorithm evaluation (known notes, compared with the old version)
-├── eval_screening.py     Boundary-check evaluation (large chords, long runs, real recordings)
-├── web_test*.wav, v2_lowhigh.wav, score_test.wav   Real recordings used by the evaluation scripts
-├── score_seq.json        Note sequence used by the scripted-score benchmark
 ├── requirements.txt      Runtime dependencies
 ├── packaging/            Windows packaging: PyInstaller spec, Inno Setup script, icon, one-click build script
 ├── android_app/          Android app (Kotlin)
+├── docs/                 Public download/landing site (GitHub Pages)
 └── .github/workflows/    GitHub Actions: pushing a v* tag builds the exe/installer/APK and publishes a Release
 ```
 
+All test/evaluation sources and audio fixtures have been removed from the repository; only runtime code and packaging assets are kept.
+
 ---
 
-## 9. Building It Yourself
+## 10. Building It Yourself
 
 **Windows (exe + installer)**: requires Python 3.10+ and [Inno Setup 6](https://jrsoftware.org/isinfo.php).
 
@@ -198,4 +230,12 @@ powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
 
 The output goes to `dist\`: `原神乐器演奏检测器.exe` (single file), `GenshinInstrumentDetector-<version>-win64-portable.exe`, and `GenshinInstrumentDetector-<version>-win64-setup.exe`.
 
-**Release**: update the version in `app_version.py` and `android_app/app/build.gradle`, then push a tag (for example, `git tag v1.0.1 && git push origin v1.0.1`). GitHub Actions builds the three packages and creates a Release. For a production Android signature, configure `ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD` in the repository Secrets; without them the debug key is used.
+**Release**: update the version in `app_version.py` and `android_app/app/build.gradle`, then push a tag (for example, `git tag v1.0.4 && git push origin v1.0.4`). GitHub Actions builds the Windows and Android packages and creates a Release. For a production Android signature, configure `ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD` in the repository Secrets; without them the debug key is used.
+
+---
+
+## 11. Privacy
+
+The app performs no telemetry and uploads no audio. The only network request is the optional GitHub Releases update check (on startup if enabled, or when you click **Check for updates**). Logs stay in `%LOCALAPPDATA%\GenshinInstrumentDetector\app.log`; settings stay in the same folder. The Android app requests only microphone-related permissions and does not use the network.
+
+Security reports: [SECURITY.md](SECURITY.md).
