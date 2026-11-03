@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
     QLabel, QPushButton, QComboBox, QSpinBox, QSlider, QTableView, QHeaderView,
     QFrame, QSplitter, QMessageBox, QSizePolicy, QButtonGroup, QFileDialog,
     QAbstractItemView, QStackedWidget, QDialog, QGroupBox, QCheckBox,
-    QProgressDialog,
+    QProgressDialog, QSizeGrip, QGraphicsDropShadowEffect,
 )
 
 import pyqtgraph as pg
@@ -177,6 +177,19 @@ QStatusBar {{ background: {c['bg']}; color: {c['faint']}; font-size: 12px; }}
 QStatusBar::item {{ border: none; }}
 QToolTip {{ background: {c['tile']}; color: {c['text']}; border: 1px solid {c['border_hi']}; padding: 6px 8px; }}
 QMessageBox, QFileDialog, QDialog {{ background: {c['card']}; }}
+QFrame#floatCard {{ background: transparent; border: none; }}
+QFrame#floatHeader {{ background: transparent; border: none; }}
+QLabel#floatTitle {{ font-size: 13px; font-weight: 700; color: #ffffff; }}
+QLabel#floatInst {{ font-size: 11px; color: #ffffff; }}
+QLabel#floatCap {{ font-size: 10px; color: rgba(255,255,255,0.72); }}
+QLabel#floatVal {{ font-size: 14px; font-weight: 600; color: #ffffff; }}
+QFrame#floatMetric {{ background: transparent; border: none; }}
+QComboBox#floatInst {{ background: transparent; border: none; color: #ffffff; font-weight: 600; padding: 2px 4px; }}
+QComboBox#floatInst::drop-down {{ border: none; width: 18px; }}
+QPushButton#floatClose {{ background: transparent; border: none; color: rgba(255,255,255,0.75); font-size: 17px; padding: 0; }}
+QPushButton#floatClose:hover {{ color: #ff7777; }}
+QPushButton#floatGhost {{ background: transparent; border: none; color: #f6b73c; font-weight: 700; padding: 2px 6px; }}
+QPushButton#floatGhost:hover {{ color: #ffffff; }}
 QGroupBox {{ border: 1px solid {c['border']}; border-radius: 10px; margin-top: 16px; padding: 12px;
              font-size: 13px; font-weight: 600; }}
 QGroupBox::title {{ subcontrol-origin: margin; left: 12px; padding: 0 5px; color: {c['dim']}; }}
@@ -627,8 +640,8 @@ class KeyTile(QWidget):
             _draw_note_glyph(p, cx, cy, side * 0.280, self.degree, fg)
         # 键位提示：小标签放在左上角的花边上，不遮挡音级符号
         if self.role != "chord" and self.show_hint and side >= 52:
-            br = max(7.0, side * 0.105)
-            bx, by = cx - r * 0.72, cy - r * 0.72
+            br = max(7.0, side * 0.095)
+            bx, by = cx - r * 0.58, cy - r * 0.62
             if self.active:
                 p.setBrush(cream)
                 p.setPen(QPen(accent2, 1))
@@ -658,6 +671,8 @@ class KeyPanel(QWidget):
         self.style = KEY_STYLE_DEFAULT
         self._rows = 0
         self.show_hints = True
+        self.fill_width = False
+        self.transparent_bg = False
         self.grid = QGridLayout(self)
         self.grid.setHorizontalSpacing(4)
         self.grid.setVerticalSpacing(0)
@@ -671,18 +686,21 @@ class KeyPanel(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(self.rect()).adjusted(0, 0, -1, -1)
-        g = QLinearGradient(0, 0, 0, self.height())
-        if THEME_EFFECTIVE == "light":
-            g.setColorAt(0, QColor(self.style["light"][0]))
-            g.setColorAt(1, QColor(self.style["light"][1]))
-            line = QColor(30, 80, 110, 34)
+        if self.transparent_bg:
+            line = QColor(30, 80, 110, 70) if THEME_EFFECTIVE == "light" else QColor(255, 255, 255, 48)
         else:
-            g.setColorAt(0, QColor(self.style["dark"][0]))
-            g.setColorAt(1, QColor(self.style["dark"][1]))
-            line = QColor(255, 255, 255, 22)
-        p.setBrush(g)
-        p.setPen(QPen(QColor(255, 255, 255, 20), 1))
-        p.drawRoundedRect(rect, 12, 12)
+            g = QLinearGradient(0, 0, 0, self.height())
+            if THEME_EFFECTIVE == "light":
+                g.setColorAt(0, QColor(self.style["light"][0]))
+                g.setColorAt(1, QColor(self.style["light"][1]))
+                line = QColor(30, 80, 110, 34)
+            else:
+                g.setColorAt(0, QColor(self.style["dark"][0]))
+                g.setColorAt(1, QColor(self.style["dark"][1]))
+                line = QColor(255, 255, 255, 22)
+            p.setBrush(g)
+            p.setPen(QPen(QColor(255, 255, 255, 20), 1))
+            p.drawRoundedRect(rect, 12, 12)
         # 五线谱：每行键后画 5 条很淡的横线
         p.setPen(QPen(line, 1))
         for r in range(self._rows):
@@ -691,12 +709,13 @@ class KeyPanel(QWidget):
                 for k in range(5):
                     y = cr.top() + cr.height() * (0.31 + k * 0.095)
                     p.drawLine(QPointF(cr.left() - 38, y), QPointF(cr.right() + 8, y))
-        # 细小的星点，避免大面积纯色
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(255, 255, 255, 55 if THEME_EFFECTIVE == "dark" else 90))
-        for fx, fy in ((0.05, 0.18), (0.17, 0.78), (0.31, 0.12), (0.46, 0.86),
-                       (0.62, 0.20), (0.77, 0.72), (0.90, 0.30), (0.96, 0.84)):
-            p.drawEllipse(QPointF(self.width() * fx, self.height() * fy), 1.4, 1.4)
+        # 细小的星点（透明背景时不画）
+        if not self.transparent_bg:
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(255, 255, 255, 55 if THEME_EFFECTIVE == "dark" else 90))
+            for fx, fy in ((0.05, 0.18), (0.17, 0.78), (0.31, 0.12), (0.46, 0.86),
+                           (0.62, 0.20), (0.77, 0.72), (0.90, 0.30), (0.96, 0.84)):
+                p.drawEllipse(QPointF(self.width() * fx, self.height() * fy), 1.4, 1.4)
         p.end()
 
     def resizeEvent(self, e):
@@ -711,7 +730,7 @@ class KeyPanel(QWidget):
         cell = row_h / 0.90
         keys_w = 7.0 * cell
         icon_w = 46.0
-        margin = max(4, int((self.width() - icon_w - keys_w) / 2.0))
+        margin = 4 if self.fill_width else max(4, int((self.width() - icon_w - keys_w) / 2.0))
         self.grid.setContentsMargins(margin, 4, margin, 4)
 
     def set_hints(self, on):
@@ -820,45 +839,74 @@ class BpmChart(QWidget):
     RANGES = [("30 秒", 30.0), ("1 分钟", 60.0), ("5 分钟", 300.0), ("全部", None)]
     stats_changed = Signal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, compact=False, transparent=False):
         super().__init__(parent)
         self.t, self.v = [], []
         self.window = 60.0
         self.dirty = False
+        self.mode = "line"
+        self.compact = compact
+        self.transparent = transparent
         self._shown = ([], [])
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(8)
 
-        head = QHBoxLayout()
-        head.setSpacing(6)
         self.chips = {}
-        for key in ("当前", "平均", "最低", "最高"):
-            lab = QLabel(f"{T(key)}  —")
-            lab.setObjectName("chip")
-            head.addWidget(lab)
-            self.chips[key] = lab
-        head.addStretch(1)
-        seg = QFrame()
-        seg.setObjectName("seg")
-        sl = QHBoxLayout(seg)
-        sl.setContentsMargins(3, 3, 3, 3)
-        sl.setSpacing(2)
-        self.range_group = QButtonGroup(self)
-        self.range_group.setExclusive(True)
-        for i, (name, sec) in enumerate(self.RANGES):
-            b = QPushButton(T(name))
-            b.setCheckable(True)
-            b.setCursor(Qt.CursorShape.PointingHandCursor)
-            b.setChecked(sec == self.window)
-            self.range_group.addButton(b, i)
-            sl.addWidget(b)
-        self.range_group.idClicked.connect(self._on_range)
-        head.addWidget(seg)
-        lay.addLayout(head)
+        self.range_group = None
+        self.mode_group = None
+        if not compact:
+            head = QHBoxLayout()
+            head.setSpacing(6)
+            for key in ("当前", "平均", "最低", "最高"):
+                lab = QLabel(f"{T(key)}  —")
+                lab.setObjectName("chip")
+                lab.setMinimumWidth(86)
+                head.addWidget(lab)
+                self.chips[key] = lab
+            head.addStretch(1)
+            seg = QFrame()
+            seg.setObjectName("seg")
+            sl = QHBoxLayout(seg)
+            sl.setContentsMargins(3, 3, 3, 3)
+            sl.setSpacing(2)
+            self.range_group = QButtonGroup(self)
+            self.range_group.setExclusive(True)
+            for i, (name, sec) in enumerate(self.RANGES):
+                b = QPushButton(T(name))
+                b.setCheckable(True)
+                b.setCursor(Qt.CursorShape.PointingHandCursor)
+                b.setChecked(sec == self.window)
+                self.range_group.addButton(b, i)
+                sl.addWidget(b)
+            self.range_group.idClicked.connect(self._on_range)
+            head.addWidget(seg)
+            mode_seg = QFrame()
+            mode_seg.setObjectName("seg")
+            ml = QHBoxLayout(mode_seg)
+            ml.setContentsMargins(3, 3, 3, 3)
+            ml.setSpacing(2)
+            self.mode_group = QButtonGroup(self)
+            self.mode_group.setExclusive(True)
+            for i, (mode, label) in enumerate((("line", "折线"), ("bar", "柱状"))):
+                b = QPushButton(T(label))
+                b.setCheckable(True)
+                b.setCursor(Qt.CursorShape.PointingHandCursor)
+                b.setChecked(mode == self.mode)
+                self.mode_group.addButton(b, i)
+                ml.addWidget(b)
+            self.mode_group.idClicked.connect(self._on_mode_clicked)
+            head.addWidget(mode_seg)
+            lay.addLayout(head)
 
         self.plot = pg.PlotWidget(axisItems={"bottom": TimeAxis(orientation="bottom")})
-        self.plot.setBackground(C["card"])
+        if transparent:
+            self.plot.setBackground(None)
+            self.plot.setStyleSheet("background: transparent; border: none;")
+            self.plot.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+            self.plot.viewport().setAutoFillBackground(False)
+        else:
+            self.plot.setBackground(C["card"])
         self.plot.setMinimumHeight(90)
         pi = self.plot.getPlotItem()
         pi.hideButtons()
@@ -874,6 +922,9 @@ class BpmChart(QWidget):
         pi.getAxis("left").setWidth(46)
         self.bars = pg.BarGraphItem(x=[], height=[], width=0.4, pen=None, brush=pg.mkBrush(C["gold"]))
         pi.addItem(self.bars)
+        self.line = pg.PlotDataItem([], [], pen=pg.mkPen(C["gold"], width=2), antialias=True)
+        self.line.setZValue(20)
+        pi.addItem(self.line)
         self.cur_line = pg.InfiniteLine(angle=0, movable=False,
                                         pen=pg.mkPen(QColor(246, 183, 60, 150), width=1, style=Qt.PenStyle.DashLine))
         pi.addItem(self.cur_line)
@@ -882,7 +933,8 @@ class BpmChart(QWidget):
         pi.addItem(self.hover_line, ignoreBounds=True)
         self.hover_line.hide()
         self.hover_text = pg.TextItem("", color=C["text"], anchor=(0, 0),
-                                      fill=pg.mkBrush(27, 31, 41, 235), border=pg.mkPen(C["border_hi"]))
+                                      fill=pg.mkBrush(0, 0, 0, 0) if transparent else pg.mkBrush(27, 31, 41, 235),
+                                      border=pg.mkPen(C["border_hi"]))
         self.hover_text.setFont(_num_font(12, bold=False))
         pi.addItem(self.hover_text, ignoreBounds=True)
         self.hover_text.hide()
@@ -899,12 +951,16 @@ class BpmChart(QWidget):
     def apply_theme(self):
         """主题切换后同步 pyqtgraph 自绘元素（QSS 管不到它们）。"""
         pi = self.plot.getPlotItem()
-        self.plot.setBackground(C["card"])
+        if self.transparent:
+            self.plot.setBackground(None)
+        else:
+            self.plot.setBackground(C["card"])
         for name in ("left", "bottom"):
             ax = pi.getAxis(name)
             ax.setPen(pg.mkPen(C["border_hi"]))
             ax.setTextPen(pg.mkPen(C["dim"]))
         self.bars.setOpts(brush=pg.mkBrush(C["gold"]))
+        self.line.setPen(pg.mkPen(C["gold"], width=2))
         gold = QColor(C["gold"])
         gold.setAlpha(150)
         self.cur_line.setPen(pg.mkPen(gold, width=1, style=Qt.PenStyle.DashLine))
@@ -940,6 +996,20 @@ class BpmChart(QWidget):
         self.window = self.RANGES[idx][1]
         self.refresh()
 
+    def _on_mode_clicked(self, idx):
+        self.set_mode("line" if idx == 0 else "bar")
+
+    def set_mode(self, mode):
+        """line = 折线（默认）；bar = 直方图。"""
+        if mode not in ("line", "bar"):
+            return
+        self.mode = mode
+        if self.mode_group is not None:
+            btn = self.mode_group.button(0 if mode == "line" else 1)
+            if btn is not None:
+                btn.setChecked(True)
+        self.refresh()
+
     def resizeEvent(self, e):
         super().resizeEvent(e)
         self.dirty = True
@@ -950,6 +1020,9 @@ class BpmChart(QWidget):
         pi = self.plot.getPlotItem()
         if not self.t:
             self.bars.setOpts(x=[], height=[], brushes=None)
+            self.bars.hide()
+            self.line.setData([], [])
+            self.line.hide()
             self.cur_line.hide()
             self.hover_line.hide()
             self.hover_text.hide()
@@ -970,24 +1043,24 @@ class BpmChart(QWidget):
             x1 = max(t_last, self.t[0] + self.window)
             x0 = x1 - self.window
         i0 = bisect.bisect_left(self.t, x0)
-        ts, vs = self.t[i0:], self.v[i0:]
-        # 条形数量与图表宽度相适应：太密时按时间分桶取平均
+        raw_ts, raw_vs = self.t[i0:], self.v[i0:]
+        # 直方图按图表宽度分桶；折线使用原始采样点
         max_bars = max(30, int(self.plot.width() / 5))
         step = BPM_SAMPLE_S
-        if len(ts) > max_bars:
+        bar_ts, bar_vs = raw_ts, raw_vs
+        if len(raw_ts) > max_bars:
             span = max(x1 - x0, step)
             step = span / max_bars
-            bt, bv = [], []
+            bar_ts, bar_vs = [], []
             k0 = 0
             for b in range(max_bars):
                 hi_t = x0 + (b + 1) * step
-                k1 = bisect.bisect_left(ts, hi_t, lo=k0)
+                k1 = bisect.bisect_left(raw_ts, hi_t, lo=k0)
                 if k1 > k0:
-                    bt.append(x0 + (b + 0.5) * step)
-                    bv.append(sum(vs[k0:k1]) / (k1 - k0))
+                    bar_ts.append(x0 + (b + 0.5) * step)
+                    bar_vs.append(sum(raw_vs[k0:k1]) / (k1 - k0))
                 k0 = k1
-            ts, vs = bt, bv
-        lo, hi = min(vs), max(vs)
+        lo, hi = min(raw_vs), max(raw_vs)
         span = max(hi - lo, 0.15 * hi, 20.0)
         y0 = max(0.0, lo - 0.25 * span)
         y1 = hi + 0.15 * span
@@ -996,20 +1069,29 @@ class BpmChart(QWidget):
         y0 = math.floor(y0 / unit) * unit
         y1 = math.ceil(y1 / unit) * unit
         den = max(1e-6, hi - lo)
-        brushes = [pg.mkBrush(*_heat((b - lo) / den if hi > lo else 0.5), 225) for b in vs]
-        self.bars.setOpts(x=ts, height=[b - y0 for b in vs], y0=y0, width=step * 0.72, brushes=brushes)
+        brushes = [pg.mkBrush(*_heat((b - lo) / den if hi > lo else 0.5), 225) for b in bar_vs]
+        self.bars.setOpts(x=bar_ts, height=[b - y0 for b in bar_vs], y0=y0,
+                          width=step * 0.72, brushes=brushes)
+        self.line.setData(raw_ts, raw_vs)
+        if self.mode == "line":
+            self.bars.hide()
+            self.line.show()
+        else:
+            self.line.hide()
+            self.bars.show()
         pi.setXRange(x0 - step, x1 + step, padding=0)
         pi.setYRange(y0, y1, padding=0)
         cur = self.v[-1]
         self.cur_line.setValue(cur)
         self.cur_line.show()
-        self._shown = (ts, vs)
+        self._shown = (raw_ts, raw_vs)
         seg_v = self.v[i0:]
         avg = sum(seg_v) / len(seg_v)
-        self.chips["当前"].setText(T("当前  {value}", value=f"{cur:.1f}"))
-        self.chips["平均"].setText(T("平均  {value}", value=f"{avg:.1f}"))
-        self.chips["最低"].setText(T("最低  {value}", value=f"{min(seg_v):.1f}"))
-        self.chips["最高"].setText(T("最高  {value}", value=f"{max(seg_v):.1f}"))
+        if self.chips:
+            self.chips["当前"].setText(T("当前  {value}", value=f"{cur:.1f}"))
+            self.chips["平均"].setText(T("平均  {value}", value=f"{avg:.1f}"))
+            self.chips["最低"].setText(T("最低  {value}", value=f"{min(seg_v):.1f}"))
+            self.chips["最高"].setText(T("最高  {value}", value=f"{max(seg_v):.1f}"))
         name = next(n for n, s in self.RANGES if s == self.window)
         if self.window is None:
             self.stats_changed.emit(T("全程 {lo} – {hi}", lo=f"{min(seg_v):.0f}", hi=f"{max(seg_v):.0f}"))
@@ -1041,6 +1123,275 @@ class BpmChart(QWidget):
 
 
 # ================================================================ 音符时长表
+class _FloatDragBar(QFrame):
+    """悬浮窗标题栏：按住空白处拖动窗口。"""
+
+    def __init__(self, target, parent=None):
+        super().__init__(parent)
+        self._target = target
+        self._press = None
+        self._start = None
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._press = e.globalPosition().toPoint()
+            self._start = self._target.pos()
+            e.accept()
+            return
+        super().mousePressEvent(e)
+
+    def mouseMoveEvent(self, e):
+        if self._press is not None:
+            delta = e.globalPosition().toPoint() - self._press
+            self._target.move(self._start + delta)
+            e.accept()
+            return
+        super().mouseMoveEvent(e)
+
+    def mouseReleaseEvent(self, e):
+        self._press = None
+        self._start = None
+        super().mouseReleaseEvent(e)
+
+
+class _ResizeGrip(QWidget):
+    """透明悬浮窗右下角的可见缩放柄：拖动改变窗口大小。"""
+
+    def __init__(self, target, parent=None):
+        super().__init__(parent)
+        self._target = target
+        self._press = None
+        self._start = None
+        self.setFixedSize(18, 18)
+        self.setCursor(Qt.CursorShape.SizeFDiagCursor)
+        self.setToolTip(T("拖动调整悬浮窗大小"))
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+
+    def paintEvent(self, e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(QPen(QColor(255, 255, 255, 150), 1.2))
+        for k in (5, 9, 13):
+            p.drawLine(QPointF(17 - k, 17), QPointF(17, 17 - k))
+        p.end()
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._press = e.globalPosition().toPoint()
+            self._start = self._target.size()
+            e.accept()
+            return
+        super().mousePressEvent(e)
+
+    def mouseMoveEvent(self, e):
+        if self._press is not None:
+            d = e.globalPosition().toPoint() - self._press
+            self._target.resize(max(self._target.minimumWidth(), self._start.width() + d.x()),
+                                max(self._target.minimumHeight(), self._start.height() + d.y()))
+            e.accept()
+            return
+        super().mouseMoveEvent(e)
+
+    def mouseReleaseEvent(self, e):
+        self._press = None
+        self._start = None
+        super().mouseReleaseEvent(e)
+
+
+class FloatingWindow(QWidget):
+    """常驻前台的演奏监视悬浮窗：键位、当前按键、和弦、调性、BPM 与 BPM 曲线。"""
+
+    hidden_by_user = Signal()
+    instrument_selected = Signal(int)
+
+    def __init__(self):
+        flags = (Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
+                 | Qt.WindowType.WindowStaysOnTopHint)
+        super().__init__(None, flags)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+        self.setWindowTitle(T("演奏监视 · 悬浮窗"))
+        self.setMinimumSize(720, 380)
+        self.resize(920, 460)
+        self._placed = False
+
+        root = QHBoxLayout(self)
+        root.setContentsMargins(6, 6, 6, 6)
+        root.setSpacing(10)
+
+        # 左侧：琴键栏（透明底，只保留键面、谱号和五线谱）
+        self.key_panel = KeyPanel()
+        self.key_panel.transparent_bg = True
+        self.key_panel.fill_width = True
+        self.key_panel.setMinimumWidth(430)
+        self.key_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        root.addWidget(self.key_panel, 3)
+
+        # 右侧：上方指标，下方 BPM 图
+        right = QWidget()
+        right.setStyleSheet("background: transparent;")
+        rv = QVBoxLayout(right)
+        rv.setContentsMargins(0, 0, 0, 0)
+        rv.setSpacing(4)
+        root.addWidget(right, 2)
+
+        header = _FloatDragBar(self, right)
+        header.setObjectName("floatHeader")
+        h = QHBoxLayout(header)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.setSpacing(6)
+        handle = QLabel("⠿")
+        handle.setObjectName("floatTitle")
+        handle.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        handle.setToolTip(T("拖动移动悬浮窗"))
+        h.addWidget(handle)
+        self.cmb_inst = QComboBox()
+        self.cmb_inst.setObjectName("floatInst")
+        self.cmb_inst.setFixedWidth(136)
+        self.cmb_inst.setToolTip(T("在悬浮窗中切换检测乐器"))
+        self.cmb_inst.activated.connect(self.instrument_selected.emit)
+        h.addWidget(self.cmb_inst)
+        h.addStretch(1)
+        self.btn_mode = QPushButton(T("折线"))
+        self.btn_mode.setObjectName("floatGhost")
+        self.btn_mode.setToolTip(T("切换 BPM 折线 / 直方图"))
+        self.btn_mode.clicked.connect(self._toggle_mode)
+        h.addWidget(self.btn_mode)
+        btn_close = QPushButton("×")
+        btn_close.setObjectName("floatClose")
+        btn_close.setFixedSize(22, 22)
+        btn_close.setToolTip(T("隐藏悬浮窗"))
+        btn_close.clicked.connect(self.hide_by_user)
+        h.addWidget(btn_close)
+        rv.addWidget(header)
+
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(1)
+        keys_box, self.lab_keys = self._metric(T("当前按键"), "cyan", size=11)
+        chord_box, self.lab_chord = self._metric(T("和弦"), "green", size=12)
+        key_box, self.lab_key = self._metric(T("调性"), "violet", size=12)
+        bpm_box, self.lab_bpm = self._metric(T("当前 BPM"), "gold", big=True)
+        grid.addWidget(keys_box, 0, 0, 1, 3)
+        grid.addWidget(chord_box, 1, 0)
+        grid.addWidget(key_box, 1, 1)
+        grid.addWidget(bpm_box, 1, 2)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
+        grid.setColumnStretch(2, 1)
+        rv.addLayout(grid)
+
+        self.chart = BpmChart(compact=True, transparent=True)
+        self.chart.setMinimumHeight(120)
+        rv.addWidget(self.chart, 1)
+
+        foot = QHBoxLayout()
+        foot.setContentsMargins(0, 0, 0, 0)
+        foot.addStretch(1)
+        foot.addWidget(_ResizeGrip(self, self))
+        rv.addLayout(foot)
+
+    @staticmethod
+    def _metric(caption, color, big=False, size=12):
+        box = QWidget()
+        box.setStyleSheet("background: transparent;")
+        lay = QVBoxLayout(box)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        cap = QLabel(T(caption))
+        cap.setObjectName("floatCap")
+        val = QLabel("—")
+        val.setObjectName("floatVal")
+        styles = f"color:{C[color]};font-size:{24 if big else size}px;font-weight:700;background:transparent;"
+        val.setStyleSheet(styles)
+        cap.setStyleSheet("background: transparent;")
+        for lab in (cap, val):
+            eff = QGraphicsDropShadowEffect(lab)
+            eff.setBlurRadius(5)
+            eff.setOffset(0, 1)
+            eff.setColor(QColor(0, 0, 0, 235))
+            lab.setGraphicsEffect(eff)
+        lay.addWidget(cap)
+        lay.addWidget(val)
+        return box, val
+
+    # ---------------------------------------------------------- 数据
+    def sync_instruments(self, names, current):
+        self.cmb_inst.blockSignals(True)
+        self.cmb_inst.clear()
+        self.cmb_inst.addItems(list(names))
+        if names:
+            self.cmb_inst.setCurrentIndex(max(0, min(int(current), len(names) - 1)))
+        self.cmb_inst.blockSignals(False)
+
+    def set_current_index(self, idx):
+        self.cmb_inst.blockSignals(True)
+        self.cmb_inst.setCurrentIndex(int(idx))
+        self.cmb_inst.blockSignals(False)
+
+    def set_instrument(self, inst, index=None):
+        self.key_panel.set_instrument(inst)
+        self.key_panel.set_hints(True)
+        if index is not None:
+            self.set_current_index(index)
+
+    def set_active(self, labels):
+        self.key_panel.set_active(labels)
+
+    def set_keys_text(self, text):
+        self.lab_keys.setText(text or "—")
+
+    def set_chord(self, text):
+        self.lab_chord.setText(text or "—")
+
+    def set_tonality(self, text):
+        self.lab_key.setText(text or "—")
+
+    def set_bpm(self, text):
+        self.lab_bpm.setText(text or "—")
+
+    def add_bpm(self, t, v):
+        self.chart.add(t, v)
+
+    def set_bpm_data(self, t, v):
+        self.chart.t = list(t)
+        self.chart.v = list(v)
+        self.chart.refresh()
+
+    def clear_bpm(self):
+        self.chart.clear()
+
+    def set_mode(self, mode):
+        self.chart.set_mode(mode)
+        self.btn_mode.setText(T("折线") if mode == "line" else T("柱状"))
+
+    def _toggle_mode(self):
+        self.set_mode("bar" if self.chart.mode == "line" else "line")
+
+    def apply_theme(self):
+        self.chart.apply_theme()
+        self.key_panel.update()
+
+    def hide_by_user(self):
+        self.hide()
+        self.hidden_by_user.emit()
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        if not self._placed:
+            self._placed = True
+            scr = QApplication.primaryScreen()
+            if scr is not None:
+                g = scr.availableGeometry()
+                self.move(g.right() - self.width() - 24, g.top() + 24)
+        self.chart.refresh()
+
+    def closeEvent(self, e):
+        e.ignore()
+        self.hide_by_user()
+
+
 class NotesView(QTableView):
     """列宽按比例随表格宽度自适应"""
     WEIGHTS = (1.25, 0.8, 0.9, 0.9, 1.0, 1.0, 1.7)
@@ -1346,6 +1697,8 @@ class MainWindow(QMainWindow):
         self._update_downloader = None
         self._update_dialog = None
         self._settings_dialog = None
+        self.float_win = None
+        self._active_labels = set()
         self.setWindowTitle(f"{T('原神乐器演奏检测器')} v{APP_VERSION}")
         self.worker = None
         self.instruments = all_instruments()
@@ -1359,6 +1712,7 @@ class MainWindow(QMainWindow):
         self._chart_timer.setInterval(400)
         self._chart_timer.timeout.connect(self._tick_chart)
         self._chart_timer.start()
+        QTimer.singleShot(0, self._restore_float)
         if self.cfg.get("check_updates", "1") == "1" and not os.environ.get("GID_NO_UPDATE"):
             QTimer.singleShot(1800, lambda: self.check_updates(silent=True))
 
@@ -1438,6 +1792,13 @@ class MainWindow(QMainWindow):
         self.btn_clear = QPushButton(T("清空记录"))
         self.btn_clear.clicked.connect(self.on_clear)
         top.addWidget(self.btn_clear)
+        self.btn_float = QPushButton(T("悬浮窗"))
+        self.btn_float.setObjectName("pillBtn")
+        self.btn_float.setCheckable(True)
+        self.btn_float.setToolTip(T("显示常驻前台的键位/和弦/BPM 悬浮窗"))
+        self.btn_float.setChecked(self.cfg.get("float_window", "1") == "1")
+        self.btn_float.toggled.connect(self._toggle_float)
+        top.addWidget(self.btn_float)
         self.btn_start = QPushButton(T("▶  开始监听"))
         self.btn_start.setObjectName("primary")
         self.btn_start.setCheckable(True)
@@ -1714,6 +2075,58 @@ class MainWindow(QMainWindow):
         self.cmb_device.setCurrentIndex(min(sel, self.cmb_device.count() - 1))
         self.cmb_device.blockSignals(False)
 
+    def _save_float_pref(self, on):
+        self.cfg["float_window"] = "1" if on else "0"
+        values = {k: self.cfg.get(k, "") for k in
+                  ("language", "theme", "check_updates", "auto_update", "float_window")}
+        settings.save(values)
+
+    def _set_float_button(self, on):
+        self.btn_float.blockSignals(True)
+        self.btn_float.setChecked(bool(on))
+        self.btn_float.blockSignals(False)
+
+    def _restore_float(self):
+        if self.cfg.get("float_window", "1") == "1":
+            self.show_float()
+        else:
+            self._set_float_button(False)
+
+    def _toggle_float(self, on):
+        if on:
+            self.show_float()
+        elif self.float_win is not None:
+            self.float_win.hide()
+        self._save_float_pref(on)
+
+    def _float_hidden(self):
+        self._set_float_button(False)
+        self._save_float_pref(False)
+
+    def _float_instrument(self, idx):
+        if 0 <= idx < self.cmb_instrument.count() and idx != self.cmb_instrument.currentIndex():
+            self.cmb_instrument.setCurrentIndex(idx)
+
+    def show_float(self):
+        if self.float_win is None:
+            self.float_win = FloatingWindow()
+            self.float_win.hidden_by_user.connect(self._float_hidden)
+            self.float_win.instrument_selected.connect(self._float_instrument)
+        fw = self.float_win
+        fw.sync_instruments([T(i.name) for i in self.instruments],
+                            self.cmb_instrument.currentIndex())
+        fw.set_instrument(self._current_inst, self.cmb_instrument.currentIndex())
+        fw.set_active(self._active_labels)
+        fw.set_keys_text(self.lab_notes.text())
+        fw.set_chord(self.lab_chord.text())
+        fw.set_tonality(self.lab_key.text())
+        fw.set_bpm(self.lab_bpm.text())
+        fw.set_bpm_data(self.chart.t, self.chart.v)
+        fw.set_mode(self.chart.mode)
+        fw.show()
+        fw.raise_()
+        self._set_float_button(True)
+
     def on_instrument_changed(self):
         idx = self.cmb_instrument.currentIndex()
         transpose = self.spin_transpose.value()
@@ -1729,6 +2142,8 @@ class MainWindow(QMainWindow):
         inst.note = base.note
         self.key_panel.set_instrument(inst)
         self._current_inst = inst
+        if self.float_win is not None:
+            self.float_win.set_instrument(inst, idx)
         if self.worker is not None:
             self.restart_worker()
 
@@ -1760,8 +2175,8 @@ class MainWindow(QMainWindow):
             self.slider_sens.value() / 100.0, parent=self)
         self.worker.sig_keys.connect(self.on_keys)
         self.worker.sig_note.connect(self.on_note)
-        self.worker.sig_chord.connect(self.lab_chord.setText)
-        self.worker.sig_tonality.connect(self.lab_key.setText)
+        self.worker.sig_chord.connect(self.on_chord)
+        self.worker.sig_tonality.connect(self.on_tonality)
         self.worker.sig_bpm.connect(self.on_bpm)
         self.worker.sig_bpm_sample.connect(self.on_bpm_sample)
         self._worker_serial += 1
@@ -1796,9 +2211,17 @@ class MainWindow(QMainWindow):
             else:
                 diag.dbg("worker_still_running_after_stop")
         self.key_panel.set_active(set())
+        self._active_labels = set()
         self.lab_notes.setText("—")
         self.lab_chord.setText("—")
+        self.lab_key.setText("—")
         self.lab_bpm.setText("—")
+        if self.float_win is not None:
+            self.float_win.set_active(set())
+            self.float_win.set_keys_text("—")
+            self.float_win.set_chord("—")
+            self.float_win.set_tonality("—")
+            self.float_win.set_bpm("—")
         self._set_pill(T("○  未在监听"), "off")
 
     def restart_worker(self):
@@ -1820,6 +2243,10 @@ class MainWindow(QMainWindow):
                 self._set_pill(T("○  未在监听"), "off")
 
     def closeEvent(self, e):
+        if self.float_win is not None:
+            self.float_win.hide()
+            self.float_win.deleteLater()
+            self.float_win = None
         if self.worker is not None:
             w = self.worker
             w.stop()
@@ -1837,7 +2264,10 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------ 数据显示
     def on_keys(self, labels):
+        self._active_labels = set(labels)
         self.key_panel.set_active(labels)
+        if self.float_win is not None:
+            self.float_win.set_active(labels)
         names = []
         key_map = {k[0]: k for k in self._current_inst.keys}
         for ch in "QWERTYUIOPASDFGHJKLZXCVBNM":
@@ -1847,7 +2277,20 @@ class MainWindow(QMainWindow):
                     names.append(f"{ch}·{midi_to_name(entry[1])}")
                 elif entry:
                     names.append(f"{ch}·{entry[3]}")
-        self.lab_notes.setText("  ".join(names) if names else "—")
+        text = "  ".join(names) if names else "—"
+        self.lab_notes.setText(text)
+        if self.float_win is not None:
+            self.float_win.set_keys_text(text)
+
+    def on_chord(self, text):
+        self.lab_chord.setText(text or "—")
+        if self.float_win is not None:
+            self.float_win.set_chord(text or "—")
+
+    def on_tonality(self, text):
+        self.lab_key.setText(text or "—")
+        if self.float_win is not None:
+            self.float_win.set_tonality(text or "—")
 
     def on_note(self, ev):
         t = ev["t"] + self._t_offset
@@ -1865,10 +2308,15 @@ class MainWindow(QMainWindow):
         self._update_table_hint()
 
     def on_bpm(self, bpm):
-        self.lab_bpm.setText("—" if math.isnan(bpm) else f"{bpm:.1f}")
+        text = "—" if math.isnan(bpm) else f"{bpm:.1f}"
+        self.lab_bpm.setText(text)
+        if self.float_win is not None:
+            self.float_win.set_bpm(text)
 
     def on_bpm_sample(self, t, bpm):
         self.chart.add(t + self._t_offset, bpm)
+        if self.float_win is not None:
+            self.float_win.add_bpm(t + self._t_offset, bpm)
 
     def on_export(self):
         if not self.notes.rows and not self.chart.t and not self.findings.rows:
@@ -1922,6 +2370,13 @@ class MainWindow(QMainWindow):
             tile.setText("—")
         self.lab_bpm.setSub("")
         self.chart.clear()
+        if self.float_win is not None:
+            self.float_win.set_active(set())
+            self.float_win.set_keys_text("—")
+            self.float_win.set_chord("—")
+            self.float_win.set_tonality("—")
+            self.float_win.set_bpm("—")
+            self.float_win.clear_bpm()
         self.notes.clear()
         self.findings.clear()
         self._screen_text = ""
@@ -1939,6 +2394,8 @@ class MainWindow(QMainWindow):
     def apply_theme_change(self):
         """主题切换后刷新自绘元素与指标卡。"""
         self.chart.apply_theme()
+        if self.float_win is not None:
+            self.float_win.apply_theme()
         for tile in (self.lab_notes, self.lab_chord, self.lab_key, self.lab_bpm):
             tile.apply_theme()
         self.table.viewport().update()
@@ -2167,6 +2624,10 @@ class SettingsDialog(QDialog):
         self.cmb_theme.setCurrentIndex(max(0, idx))
         self.cmb_theme.currentIndexChanged.connect(self._preview_theme)
         tv.addWidget(self.cmb_theme)
+        self.chk_float = QCheckBox(T("启动时显示悬浮窗"))
+        self.chk_float.setChecked((parent.cfg.get("float_window", "1") if parent else "1") == "1")
+        self.chk_float.setToolTip(T("常驻前台的键位、和弦、BPM、调性与 BPM 曲线窗口。"))
+        tv.addWidget(self.chk_float)
         root.addWidget(theme_box)
 
         # 更新
@@ -2263,13 +2724,21 @@ class SettingsDialog(QDialog):
         theme = self.cmb_theme.currentData()
         auto = "1" if self.chk_updates.isChecked() else "0"
         auto_install = "1" if self.chk_auto.isChecked() else "0"
+        float_on = "1" if self.chk_float.isChecked() else "0"
         ok = settings.save({"language": lang, "theme": theme,
-                            "check_updates": auto, "auto_update": auto_install})
+                            "check_updates": auto, "auto_update": auto_install,
+                            "float_window": float_on})
         if not ok:
             QMessageBox.warning(self, T("设置"), T("设置保存失败，请检查目录权限。"))
         if self.parent_window is not None:
             self.parent_window.cfg.update({"language": lang, "theme": theme,
-                                           "check_updates": auto, "auto_update": auto_install})
+                                           "check_updates": auto, "auto_update": auto_install,
+                                           "float_window": float_on})
+            if self.parent_window.float_win is not None or float_on == "1":
+                if float_on == "1":
+                    self.parent_window.show_float()
+                else:
+                    self.parent_window._toggle_float(False)
         changed = lang != i18n.current()
         self.accept()
         if changed and self.parent_window is not None:

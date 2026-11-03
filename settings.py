@@ -13,6 +13,7 @@ DEFAULTS = {
     "theme": "system",       # system / dark / light
     "check_updates": "0",    # 默认不联网；用户在设置中显式开启后启动时才检查
     "auto_update": "0",      # 发现新版本后是否自动下载并安装
+    "float_window": "1",     # 启动时显示常驻前台悬浮窗
 }
 
 VALID_THEMES = {"system", "dark", "light"}
@@ -46,6 +47,8 @@ def load() -> dict:
         data["check_updates"] = "0"
     if data.get("auto_update") not in ("0", "1"):
         data["auto_update"] = "0"
+    if data.get("float_window") not in ("0", "1"):
+        data["float_window"] = "1"
     return data
 
 

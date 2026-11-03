@@ -52,6 +52,8 @@ jobs:
 
   android:
     name: Android（APK）
+    # Windows-only release: set repository variable WINDOWS_ONLY=1 for that tag, then remove it.
+    if: vars.WINDOWS_ONLY != '1'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -103,7 +105,7 @@ jobs:
 
   release:
     name: 发布到 Releases
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: always() && startsWith(github.ref, 'refs/tags/v') && needs.windows.result == 'success' && (vars.WINDOWS_ONLY == '1' || needs.android.result == 'success')
     needs: [windows, android]
     runs-on: ubuntu-latest
     permissions:

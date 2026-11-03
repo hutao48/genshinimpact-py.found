@@ -31,6 +31,31 @@ em{color:var(--text)}
 .nav nav a:hover{color:var(--text)}
 .gh{border:1px solid var(--line); padding:7px 12px; border-radius:9px; color:var(--text)!important}
 .gh:hover{border-color:var(--faint)}
+.lang-picker{position:relative}
+.lang-button{
+  display:flex; align-items:center; gap:7px;
+  background:var(--panel); color:var(--text);
+  border:1px solid var(--line); border-radius:9px;
+  padding:6px 10px; font-size:13px; line-height:1.35; cursor:pointer;
+}
+.lang-button:hover,.lang-button:focus{border-color:var(--gold);outline:none}
+.lang-flag{width:20px; height:20px; object-fit:contain; flex:0 0 20px}
+.lang-caret{color:var(--dim); font-size:10px; margin-left:1px}
+.lang-menu{
+  display:none; position:absolute; right:0; top:calc(100% + 7px); z-index:60;
+  min-width:205px; padding:6px; background:var(--panel2);
+  border:1px solid var(--line); border-radius:10px;
+  box-shadow:0 16px 40px rgba(0,0,0,.45);
+}
+.lang-menu.open{display:block}
+.lang-option{
+  display:flex; align-items:center; gap:9px; width:100%;
+  padding:8px 10px; border:0; border-radius:7px;
+  background:transparent; color:var(--dim); font-size:13px; text-align:left; cursor:pointer;
+}
+.lang-option:hover{background:var(--panel); color:var(--text)}
+.lang-option[aria-selected="true"]{background:rgba(246,183,60,.13); color:var(--gold)}
+.lang-option .lang-flag{width:20px;height:20px}
 
 main{max-width:1280px; margin:0 auto; padding:0 6vw}
 .hero{display:grid; grid-template-columns:1.02fr .98fr; gap:56px; align-items:center; padding:86px 0 78px}

@@ -1,6 +1,6 @@
 # Genshin Instrument Performance Detector
 
-**Version**: Windows 1.1.1 / Android 1.1.1 | **Website**: [hutao48.github.io/genshinimpact-py.found](https://hutao48.github.io/genshinimpact-py.found/) | **Downloads**: [GitHub Releases](https://github.com/hutao48/genshinimpact-py.found/releases/latest) | [Chinese user guide (中文使用说明)](使用说明.md)
+**Version**: Windows 1.1.3 / Android 1.1.1 | **Website**: [hutao48.github.io/genshinimpact-py.found](https://hutao48.github.io/genshinimpact-py.found/) | **Downloads**: [GitHub Releases](https://github.com/hutao48/genshinimpact-py.found/releases/latest) | [Chinese user guide (中文使用说明)](使用说明.md)
 
 > The application starts in Simplified Chinese on Simplified Chinese systems, Traditional Chinese on Traditional Chinese systems, and English elsewhere. You can switch between **简体中文 / 繁體中文 / 正體中文（臺灣）/ English / 日本語** in **Settings**.
 
@@ -8,28 +8,29 @@
 
 | Platform | File | Notes |
 |---|---|---|
-| Windows | `GenshinInstrumentDetector-1.1.1-win64-setup.exe` | Installer (per-user, no administrator; Start Menu/desktop shortcuts and uninstaller) |
-| Windows | `GenshinInstrumentDetector-1.1.1-win64-portable.exe` | Portable single file; double-click to run |
+| Windows | `GenshinInstrumentDetector-1.1.3-win64-setup.exe` | Installer (per-user, no administrator; Start Menu/desktop shortcuts and uninstaller) |
+| Windows | `GenshinInstrumentDetector-1.1.3-win64-portable.exe` | Portable single file; double-click to run |
 | Android | `GenshinInstrumentDetector-1.1.1-android.apk` | Android 7.0+; includes the built-in update check and fixed release signing since 1.1.0 |
 | Checksums | `SHA256SUMS.txt` | SHA-256 for all release files |
 
 Direct links:
 
-- **Windows installer** — <https://github.com/hutao48/genshinimpact-py.found/releases/download/v1.1.1/GenshinInstrumentDetector-1.1.1-win64-setup.exe>
-- **Windows portable** — <https://github.com/hutao48/genshinimpact-py.found/releases/download/v1.1.1/GenshinInstrumentDetector-1.1.1-win64-portable.exe>
+- **Windows installer** — <https://github.com/hutao48/genshinimpact-py.found/releases/download/v1.1.3/GenshinInstrumentDetector-1.1.3-win64-setup.exe>
+- **Windows portable** — <https://github.com/hutao48/genshinimpact-py.found/releases/download/v1.1.3/GenshinInstrumentDetector-1.1.3-win64-portable.exe>
 - **Android APK** — <https://github.com/hutao48/genshinimpact-py.found/releases/download/v1.1.1/GenshinInstrumentDetector-1.1.1-android.apk>
 
-The executables are not code-signed, so Windows SmartScreen may show "Unknown publisher"; choose **More info → Run anyway**. The APK uses a per-build debug key: uninstall the previous version before upgrading.
+The executables are not code-signed, so Windows SmartScreen may show "Unknown publisher"; choose **More info → Run anyway**. The APK uses a fixed release key since 1.1.0; only users upgrading from 1.0.x need to uninstall the debug-signed version once.
 
 The Windows installer is also hosted directly on the project website (`docs/downloads/`); use `docs/downloads/SHA256SUMS.txt` for that copy.
 
-## What's New in 1.1.1
+## What's New in 1.1.3
 
-**This update only fixes a keyboard UI anomaly; detection and features are unchanged.**
+**Windows-only update: adds the always-on-top performance overlay and makes the BPM chart a line by default. Android remains at 1.1.1.**
 
-- Key faces now match the in-game instrument UI: cream discs with a decorative inner petal ring and a centered note glyph. The solfège labels and computer-key letters were removed from the center of the key faces; an optional “Key hints” toggle in the Keyboard header shows a small letter on the top-left of each key, or hides it for the pure 1:1 face.
-- The row clefs, staff lines, per-instrument palettes, the Ukulele chord row and the Nightwind Horn two-row layout are preserved; hovering a key still shows its computer key and note name.
-- Android 1.1.1 is a version-sync release with the same functionality as Android 1.1.0; fixed signing is unchanged.
+- **Always-on-top performance overlay** on Windows: live keys, current keys, chord, key/tonality, BPM and the BPM curve, with the same instrument layout as the main window. Drag it by the header, resize it from the corner, hide it with × or the toolbar “Floating window” button.
+- **BPM chart is now a line by default** in both the main window and the overlay. Use the “Line / Bars” switch to restore the histogram at any time.
+- The 1.1.1 key-face UI, clefs, staff lines, instrument palettes, Ukulele chord row, Nightwind Horn two-row layout and the “Key hints” toggle are unchanged.
+- Android remains at **1.1.1**; this release does not rebuild or update the APK.
 
 ---
 
@@ -51,17 +52,17 @@ For every performance, the app shows:
 1. **The keys currently held** (including chords such as C, Dm, Em, F, G, Am and G7) — the on-screen keyboard highlights them in real time.
 2. **The current key** (e.g., C major or A minor, with a confidence value).
 3. **The exact duration of every note** (millisecond precision; the table keeps up to 20,000 rows, newest first, with start time, key, note name, solfège, duration, gap and end reason).
-4. **The current BPM**, plus a **bar chart of how BPM changes over time** (one point every 0.5 s, up to 4 hours; switch between the last 30 s / 1 min / 5 min / all, with the vertical axis auto-scaled to the visible data, bar colors running from cyan to red as the tempo goes from slow to fast, and a tooltip showing the reading at any moment).
+4. **The current BPM**, plus a **line chart of how BPM changes over time** (one point every 0.5 s, up to 4 hours; switch between the last 30 s / 1 min / 5 min / all, with the vertical axis auto-scaled to the visible data, and a tooltip showing the reading at any moment). Use the **Line / Bars** switch to restore the histogram.
 
 ---
 
 ## 2. Quick Start
 
-1. Run `GenshinInstrumentDetector-1.1.1-win64-setup.exe` and launch the app from the Start Menu/desktop, or double-click the portable exe (the first launch takes about 2–5 s because the single-file build extracts itself).
+1. Run `GenshinInstrumentDetector-1.1.3-win64-setup.exe` and launch the app from the Start Menu/desktop, or double-click the portable exe (the first launch takes about 2–5 s because the single-file build extracts itself).
 2. Choose an **instrument** at the top (Windsong Lyre by default).
 3. The **capture device** is already set to "Speaker output · loopback" — it listens to everything played through the speakers, so in-game performances are captured automatically, **with no extra configuration**.
 4. Click **▶ Start listening**, then play in the game.
-5. While you play, key highlights, pressed keys/chords, key and BPM refresh in real time, the BPM bar chart scrolls, and the table below logs each note's duration. Drag the separators between the keyboard/metrics, BPM chart and duration table to resize them; the layout adapts when the window is resized. Stopping and starting again (or switching instruments) keeps appending to the existing records instead of clearing them; **Export** saves the duration table and BPM history as CSV.
+5. While you play, key highlights, pressed keys/chords, key and BPM refresh in real time, the BPM line scrolls, and the table below logs each note's duration. Drag the separators between the keyboard/metrics, BPM chart and duration table to resize them; the layout adapts when the window is resized. Use the toolbar “Floating window” button to keep a compact always-on-top monitor over the game. Stopping and starting again (or switching instruments) keeps appending to the existing records instead of clearing them; **Export** saves the duration table and BPM history as CSV.
 
 > If detection feels insensitive or reports too many false positives, adjust the **Sensitivity** slider (40%–70% is a good range). Higher values are more sensitive and also pick up more background sound.
 
@@ -75,6 +76,7 @@ Open the gear button in the top-right corner. All options are in one dialog:
 |---|---|---|
 | Language | 简体中文 / 繁體中文 / 正體中文（臺灣）/ English / 日本語 | Applies after restarting the app; all UI text, analysis results, CSV headers and offline reports use the selected language |
 | Theme | Follow system / Dark / Light | Applies immediately; "Follow system" tracks the Windows dark-mode setting |
+| Window | Show floating window on startup | On by default; opens the always-on-top keys/chord/BPM overlay. It can also be toggled from the toolbar or hidden with its × button |
 | Updates | Check for updates on startup | Off by default; when enabled, the app checks GitHub Releases at startup. The check only queries GitHub Releases |
 | Updates | Automatically download and install new versions | Off by default; when enabled, the Windows installer is downloaded, SHA-256 verified, then started silently. Android downloads and verifies the APK, then opens the system installer |
 | Updates | Check for updates / Open download page | Manual check; shows current/latest version and opens the release page when a newer version exists |
@@ -131,7 +133,7 @@ Three rows of white keys covering the C major scale:
 |---|---|
 | Keyboard | Currently sounding keys are highlighted (gold = pitch key, green = chord key); key size adapts to the window |
 | Live metrics | Current key (note name), detected chord, current key/tonality and current BPM (the small text below shows the lowest–highest BPM in the visible chart range) |
-| BPM history | Bar chart with time (min:s) on the x-axis and BPM on the y-axis (auto-scaled to the visible data); one point every 0.5 s, kept for up to 4 hours; use the top-right control to switch the range (30 s / 1 min / 5 min / all); the header shows the current/average/minimum/maximum values in that range; the dashed line marks the current reading, and hovering shows the reading at that moment |
+| BPM history | Line chart by default (switchable to bars) with time (min:s) on the x-axis and BPM on the y-axis (auto-scaled to the visible data); one point every 0.5 s, kept for up to 4 hours; use the top-right control to switch the range (30 s / 1 min / 5 min / all); the header shows the current/average/minimum/maximum values in that range; the dashed line marks the current reading, and hovering shows the reading at that moment |
 | Note durations | Table: start time (min:s.ms) / key / note name / solfège / duration (ms) / gap (ms) / end reason, newest first, up to 20,000 rows (see "How durations and BPM are defined" below) |
 | Transpose | Pitch-reference calibration in semitones (−12 to +12); shift everything if detected pitches do not match the real ones |
 | Clear | Clears the table, BPM history and live readouts |
@@ -234,7 +236,7 @@ powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
 
 The output goes to `dist\`: `原神乐器演奏检测器.exe` (single file), `GenshinInstrumentDetector-<version>-win64-portable.exe`, and `GenshinInstrumentDetector-<version>-win64-setup.exe`.
 
-**Release**: update the version in `app_version.py` and `android_app/app/build.gradle`, then push a tag (for example, `git tag v1.1.1 && git push origin v1.1.1`). GitHub Actions builds the Windows and Android packages and creates a Release. Android release builds require the `ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD` repository Secrets; the workflow refuses to publish a debug-signed APK if they are missing.
+**Release**: update the version in `app_version.py` (and `android_app/app/build.gradle` only when the APK changes), then push a tag (for example, `git tag v1.1.3 && git push origin v1.1.3`). GitHub Actions builds the Windows and Android packages and creates a Release. Android release builds require the `ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD` repository Secrets; the workflow refuses to publish a debug-signed APK if they are missing. For a Windows-only release, temporarily set the repository variable `WINDOWS_ONLY=1` before pushing the tag; the Android job is skipped and the Release contains only the Windows assets. Remove the variable afterwards.
 
 ---
 
