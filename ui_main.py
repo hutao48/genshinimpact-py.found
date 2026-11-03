@@ -1423,7 +1423,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("记录已清空")
 
 
-def main():
+def main(self_test_path=None):
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(APP_VERSION)
@@ -1433,8 +1433,30 @@ def main():
     apply_theme(app)
     w = MainWindow()
     w.show()
+    if self_test_path:
+        # 构建时由成品 EXE 执行：真正导入 Qt、构造主窗口并渲染，成功后自动退出。
+        # 不启动音频采集；缺少打包依赖时无法生成成功报告，构建流程必须失败。
+        def finish_self_test():
+            import json
+            from pathlib import Path
+            from PySide6.QtCore import qVersion
+            try:
+                report_path = Path(self_test_path)
+                report_path.parent.mkdir(parents=True, exist_ok=True)
+                rendered = w.grab().save(str(report_path.with_suffix(".png")))
+                report = {"ok": bool(w.isVisible() and rendered),
+                          "version": APP_VERSION, "qt_version": qVersion(),
+                          "frozen": bool(getattr(sys, "frozen", False)),
+                          "executable": sys.executable, "window_title": w.windowTitle()}
+                report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+                app.exit(0 if report["ok"] else 1)
+            except Exception:
+                import traceback
+                traceback.print_exc()
+                app.exit(1)
+        QTimer.singleShot(500, finish_self_test)
     # 诊断/自动化支持：设置 GID_AUTOSTART=1 时自动开始监听（供测试与远程排查用）
-    if os.environ.get("GID_AUTOSTART") == "1":
+    elif os.environ.get("GID_AUTOSTART") == "1":
         QTimer.singleShot(600, w.start_worker)
     sys.exit(app.exec())
 

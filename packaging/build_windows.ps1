@@ -28,6 +28,10 @@ try {
     if (-not $Version) { throw "无法读取 app_version.APP_VERSION" }
     Write-Host "== 版本 $Version"
 
+    # 界面依赖缺失时 PyInstaller 不报错，只会打出一个启动即报 "No module named 'PySide6'" 的 exe：先检查
+    & $Python -c "import PySide6.QtWidgets, pyqtgraph, soundcard, numpy"
+    if ($LASTEXITCODE -ne 0) { throw "缺少界面依赖：先运行 $Python -m pip install -r packaging\requirements-build.txt" }
+
     if (-not $SkipTests) {
         Write-Host "== 回归测试 test_detection.py"
         & $Python test_detection.py
@@ -42,6 +46,34 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "PyInstaller 失败" }
     $exe = Join-Path $Root "dist\原神乐器演奏检测器.exe"
     if (-not (Test-Path $exe)) { throw "未找到 $exe" }
+
+    Write-Host "== 检查成品界面依赖"
+    & $Python packaging\verify_windows_bundle.py $exe
+    if ($LASTEXITCODE -ne 0) { throw "成品 EXE 缺少界面依赖" }
+
+    Write-Host "== 成品界面启动与渲染检查"
+    $guiReport = Join-Path $Root ("build\gui-self-test-" + [guid]::NewGuid().ToString("N") + ".json")
+    $oldQtPlatform = $env:QT_QPA_PLATFORM
+    try {
+        $env:QT_QPA_PLATFORM = "offscreen"
+        $guiProcess = Start-Process -FilePath $exe -ArgumentList @("--self-test-gui", ('"{0}"' -f $guiReport)) -WindowStyle Hidden -PassThru
+        if (-not $guiProcess.WaitForExit(30000)) {
+            & taskkill.exe /PID $guiProcess.Id /T /F | Out-Null
+            throw "成品界面启动检查超时"
+        }
+        if ($guiProcess.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $guiReport)) {
+            throw "成品界面启动失败，未生成成功报告"
+        }
+        $guiResult = Get-Content -LiteralPath $guiReport -Raw | ConvertFrom-Json
+        if (-not $guiResult.ok -or -not $guiResult.frozen -or $guiResult.version -ne $Version) {
+            throw "成品界面检查结果异常"
+        }
+        Write-Host "== 界面检查通过：Qt $($guiResult.qt_version)，版本 $Version"
+    }
+    finally {
+        if ($null -eq $oldQtPlatform) { Remove-Item Env:QT_QPA_PLATFORM -ErrorAction SilentlyContinue }
+        else { $env:QT_QPA_PLATFORM = $oldQtPlatform }
+    }
     $portable = Join-Path $Root "dist\GenshinInstrumentDetector-$Version-win64-portable.exe"
     Copy-Item $exe $portable -Force
 

@@ -149,6 +149,12 @@ def analyze_file(wav_path, out_path=None, inst_name=None):
 def main():
     _setup_logging()
     args = sys.argv[1:]
+    if args and args[0] == "--self-test-gui":
+        if len(args) != 2:
+            raise ValueError("用法：--self-test-gui 界面检查结果.json")
+        from ui_main import main as ui_main
+        ui_main(self_test_path=args[1])
+        return
     if args and args[0] in ("--analyze", "-a"):
         if len(args) < 2:
             print(__doc__)
