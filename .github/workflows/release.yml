@@ -2,9 +2,9 @@
 #   推送形如 v1.0.0 的 tag：构建 Windows（单文件 exe + 安装程序）与 Android（APK），并发布到 GitHub Releases
 #   手动运行（Actions → 构建与发布 → Run workflow）：只构建、上传为 Artifacts，不发布
 #
-# Android 正式签名（可选）：在仓库 Settings → Secrets and variables → Actions 中配置
+# Android 正式签名：在仓库 Settings → Secrets and variables → Actions 中配置
 #   ANDROID_KEYSTORE_BASE64（keystore 文件的 base64）、ANDROID_KEYSTORE_PASSWORD、ANDROID_KEY_ALIAS、ANDROID_KEY_PASSWORD
-#   未配置时用 CI 临时生成的调试密钥签名（可直接安装，但每次构建签名不同，升级需先卸载旧版）
+#   未配置固定发布密钥时构建失败，不生成临时调试签名的发布包。
 name: 构建与发布
 
 on:
@@ -20,9 +20,9 @@ jobs:
     name: Windows（exe + 安装程序）
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.10"
           cache: pip
@@ -37,11 +37,11 @@ jobs:
           $found = (Get-Command iscc -ErrorAction SilentlyContinue) -or (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe") -or (Test-Path "$env:ProgramFiles\Inno Setup 6\ISCC.exe")
           if (-not $found) { choco install innosetup --no-progress -y }
 
-      - name: 测试并打包
+      - name: 回归测试、打包与成品自检
         shell: pwsh
         run: ./packaging/build_windows.ps1 -Python python
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: windows
           path: |
@@ -52,30 +52,32 @@ jobs:
 
   android:
     name: Android（APK）
+    # Windows-only release: set repository variable WINDOWS_ONLY=1 for that tag, then remove it.
+    if: vars.WINDOWS_ONLY != '1'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
         with:
           gradle-version: "8.7"
 
-      - name: 准备发布签名（可选）
+      - name: 准备发布签名
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
-          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
-            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
-            echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
-            echo "使用仓库 Secrets 中的正式密钥签名"
-          else
-            echo "未配置签名 Secrets：使用调试密钥签名"
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 is required; refusing to build a debug-signed release."
+            exit 1
           fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+          echo "使用仓库 Secrets 中的固定发布密钥签名"
 
       - name: 构建 APK
         working-directory: android_app
@@ -87,13 +89,15 @@ jobs:
 
       - name: 整理产物
         run: |
-          VER=$(python3 -c "import app_version; print(app_version.APP_VERSION)")
+          # APK 文件名用 Android 的 versionName（桌面端与 Android 版本号可以不同）
+          APKVER=$(sed -n 's/.*versionName "\([^"]*\)".*/\1/p' android_app/app/build.gradle | head -n1)
+          if [ -z "$APKVER" ]; then APKVER=$(python3 -c "import app_version; print(app_version.APP_VERSION)"); fi
           mkdir -p out
-          cp android_app/app/build/outputs/apk/release/app-release.apk "out/GenshinInstrumentDetector-$VER-android.apk"
+          cp android_app/app/build/outputs/apk/release/app-release.apk "out/GenshinInstrumentDetector-$APKVER-android.apk"
           (cd out && sha256sum *.apk > SHA256SUMS-android.txt)
           ls -l out
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: android
           path: out/*
@@ -101,15 +105,23 @@ jobs:
 
   release:
     name: 发布到 Releases
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: always() && startsWith(github.ref, 'refs/tags/v') && needs.windows.result == 'success' && (vars.WINDOWS_ONLY == '1' || needs.android.result == 'success')
     needs: [windows, android]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/download-artifact@v4
+      - name: Verify tag matches app version
+        run: |
+          VER=$(python3 -c "import app_version; print(app_version.APP_VERSION)")
+          if [ "v$VER" != "${GITHUB_REF_NAME}" ]; then
+            echo "Release tag must be v$VER, got ${GITHUB_REF_NAME}"
+            exit 1
+          fi
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: artifacts
           merge-multiple: true
@@ -121,7 +133,7 @@ jobs:
           ls -l artifacts
           cat artifacts/SHA256SUMS.txt
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           name: 原神乐器演奏检测器 ${{ github.ref_name }} 正式版
           body_path: packaging/release_notes.md

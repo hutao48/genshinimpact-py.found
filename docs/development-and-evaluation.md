@@ -120,12 +120,21 @@ powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
 
 当前源码的 Windows 版本在 `app_version.py` 中，Android 版本在 `android_app/app/build.gradle` 中，两者可能不同。发布包的版本以实际构建结果为准。
 
-现有 GitHub Actions 工作流在推送 `v*` 标签时会同时构建 Windows 和 Android。只发布 Windows 时，应使用单独的发布流程，避免把 Android 包标成 Windows 的版本。请先核对两个平台的版本与附件，再公开 Release。
+现有 GitHub Actions 发布流程在推送 `v*` 标签时构建 Windows 和 Android。只发布 Windows 时，维护者可按现有流程设置仓库变量 `WINDOWS_ONLY=1`，结束后移除；请先核对平台版本与附件，再公开 Release。合并代码本身不创建发布标签。
 
 Windows 构建还会执行以下检查：
 
 - 验证构建环境可以导入 PySide6、pyqtgraph、soundcard 和 numpy。
+- 运行检测、停顿按键与 `test_integration.py` 界面接口回归；覆盖移调、悬浮窗同步、多语言排查提示、圆号时长数据与采集失败清理。
 - 使用 `packaging/verify_windows_bundle.py` 检查成品中的界面模块、Qt 扩展与 Windows 平台插件。
 - 让成品 EXE 通过 `--self-test-gui` 创建并渲染主窗口，生成成功报告后才继续打包。
 
 这些启动检查不等同于真实游戏演奏、识别精度或安装过程的验收。
+
+### 本次源码合并验证
+
+将本地 1.0.8 检测改进合入 1.1.3 界面时，检测回归的 9 组用例、5 项停顿回归与 5 项界面接口回归均通过。对之前用户提供的 87.38 秒录音，合并前后逐个比较了 2,072 次回调，检测输出完全一致：均记录 159 个音符，4 段停顿区间的亮键回调数均为 0。
+
+Windows 安装版和免安装版在本地构建成功，成品依赖检查与界面启动检查通过。本次没有发布新的 Release，也没有重新进行完整的游戏演奏或人工听音验收；上面的版本评测表是历史记录。
+
+`Windows 合并验证与打包` 工作流会在推送 `main`、提交拉取请求或手动运行时执行回归和 Windows 打包，并上传安装版、免安装版、校验文件以及界面自检报告。测试包保留 30 天，正式发布仍使用原有发布流程。

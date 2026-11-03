@@ -39,6 +39,9 @@ try {
         Write-Host "== 停顿与按键显示回归 test_stop_keys.py"
         & $Python test_stop_keys.py
         if ($LASTEXITCODE -ne 0) { throw "test_stop_keys.py 未通过" }
+        Write-Host "== 界面、悬浮窗与检测接口回归 test_integration.py"
+        & $Python test_integration.py
+        if ($LASTEXITCODE -ne 0) { throw "test_integration.py 未通过" }
     }
 
     Write-Host "== PyInstaller"

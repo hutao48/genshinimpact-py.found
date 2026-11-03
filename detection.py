@@ -32,6 +32,7 @@ from collections import deque
 import numpy as np
 from instruments import (Instrument, midi_to_name, midi_to_solfege,
                          CHORD_TEMPLATES, NOTE_NAMES)
+from i18n import T
 
 # Krumhansl-Schmuckler 调性轮廓（大调/小调 12 音级权重）
 KS_MAJOR = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
@@ -113,6 +114,11 @@ END_REASON_TEXT = {
     "retrig": "同键重按",
     "decay": "余音自然衰减",
 }
+
+
+def end_reason_text(code: str) -> str:
+    text = END_REASON_TEXT.get(code)
+    return T(text) if text is not None else (code or "")
 
 
 # 截止定位校正表（4096 Hann 窗 / 1024 帧移下对"稳态音 + 硬截止 / 指数释放 τ=5~240 ms"仿真标定）：
@@ -2156,7 +2162,9 @@ class NoteDetector:
 
     @staticmethod
     def _key_name(key):
-        return f"{NOTE_NAMES[key[0]]} 大调" if key[1] == "maj" else f"{NOTE_NAMES[key[0]]} 小调"
+        if key[1] == "maj":
+            return T("{note} 大调", note=NOTE_NAMES[key[0]])
+        return T("{note} 小调", note=NOTE_NAMES[key[0]])
 
     def _key_chroma(self, now):
         """最近 KEY_WINDOW 秒的音级分布。每个音按"占时"（到下一个起音的时间，封顶 1 s）而不是余音长度加权
@@ -2196,7 +2204,7 @@ class NoteDetector:
         chroma = self._key_chroma(now)
         if chroma is None:
             if self._key_disp is None:
-                return "分析中…（音符不足）"
+                return T("分析中…（音符不足）")
             return self._key_name(self._key_disp)
         cands = self._key_candidates()
         sc = []
@@ -2233,8 +2241,8 @@ class NoteDetector:
         name = self._key_name(disp)
         if p < 0.6:
             other = next(k for c, k in sc if k != disp)
-            return f"{name}（与 {self._key_name(other)} 难分）"
-        return f"{name}（置信 {int(5 * round(20 * p))}%）"
+            return T("{name}（与 {other} 难分）", name=name, other=self._key_name(other))
+        return T("{name}（置信 {pct}%）", name=name, pct=int(5 * round(20 * p)))
 
     # ------------------------------------------------------------------
     # 和弦

@@ -37,6 +37,7 @@ version_info = VSVersionInfo(
 
 datas = collect_data_files("pyqtgraph")
 datas += [(os.path.join(ROOT, "packaging", "app.ico"), ".")]
+datas += [(os.path.join(ROOT, "packaging", "ui_assets"), "ui_assets")]
 hiddenimports = collect_submodules("soundcard")
 
 a = Analysis(

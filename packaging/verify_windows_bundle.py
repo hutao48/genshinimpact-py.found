@@ -9,10 +9,14 @@ def verify(path):
     archive = CArchiveReader(path)
     modules = archive.open_embedded_archive("PYZ.pyz").toc
     required_modules = {"PySide6", "shiboken6", "pyqtgraph", "soundcard",
-                        "ui_main", "detection", "screening", "app_version"}
+                        "ui_main", "detection", "screening", "app_version",
+                        "i18n", "settings", "updater", "locales",
+                        "locales.en", "locales.ja", "locales.zh_hant"}
     binaries = {name.replace("\\", "/").lower() for name in archive.toc}
     required_files = {"pyside6/qtcore.pyd", "pyside6/qtgui.pyd", "pyside6/qtwidgets.pyd",
-                      "pyside6/plugins/platforms/qwindows.dll"}
+                      "pyside6/plugins/platforms/qwindows.dll",
+                      "ui_assets/key_face.png",
+                      *{f"ui_assets/glyph_{i}.png" for i in range(7)}}
     missing = sorted(required_modules - set(modules)) + sorted(required_files - binaries)
     if missing:
         raise RuntimeError("成品 EXE 缺少界面依赖：" + ", ".join(missing))
