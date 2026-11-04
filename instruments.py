@@ -90,26 +90,30 @@ class Instrument:
 DIATONIC_OFFSETS = [0, 2, 4, 5, 7, 9, 11]  # 白键 C D E F G A B 的半音偏移
 
 
-def _diatonic_row(labels: str, base_octave: int, transpose: int = 0):
-    """一行 7 个白键：base_octave 表示该行 C 音的八度（C4=4 → MIDI 60）"""
+def _diatonic_row(labels: str, base_octave: int):
+    """一行 7 个白键：base_octave 表示该行 C 音的八度（C4=4 → MIDI 60）。
+    键位里存的是未移调的音高；移调只记在 Instrument.transpose 上（valid_midis / label_of 统一加减），
+    以前这里也加了一次移调，界面上移调 +12 时检测实际移了 +24"""
     out = []
     for i, ch in enumerate(labels):
-        midi = 60 + (base_octave - 4) * 12 + DIATONIC_OFFSETS[i] + transpose
+        midi = 60 + (base_octave - 4) * 12 + DIATONIC_OFFSETS[i]
         out.append((ch, midi, "pitch", ""))
     return out
 
 
 def build_lyre21(name: str, high=5, mid=4, low=3, transpose=0, note=""):
-    keys = _diatonic_row("QWERTYU", high, transpose)
-    keys += _diatonic_row("ASDFGHJ", mid, transpose)
-    keys += _diatonic_row("ZXCVBNM", low, transpose)
+    keys = _diatonic_row("QWERTYU", high)
+    keys += _diatonic_row("ASDFGHJ", mid)
+    keys += _diatonic_row("ZXCVBNM", low)
     return Instrument(name, keys, transpose=transpose, note=note)
 
 
 def build_horn(transpose=0):
-    """晚风圆号：两排 Q-U（高） + A-J（低），14 键"""
-    keys = _diatonic_row("QWERTYU", 5, transpose)
-    keys += _diatonic_row("ASDFGHJ", 4, transpose)
+    """晚风圆号：两排 Q-U（高） + A-J（低），14 键，按 C4~B5 识别。
+    注：与游戏录像逐一对照，圆号最低的显著分音其实在这个音高下方一个八度、而 2~4 次谐波比它还强；
+    按 C3~B4 识别时检测器多半找到的是更强的谐波、键反而认错（召回 21%，按 C4~B5 是 32%），所以仍按 C4~B5"""
+    keys = _diatonic_row("QWERTYU", 5)
+    keys += _diatonic_row("ASDFGHJ", 4)
     return Instrument("晚风圆号", keys, transpose=transpose,
                       note="两排 14 键（游戏界面为两排七音按钮）")
 
@@ -125,8 +129,8 @@ def build_youko(transpose=0):
         ("Y", None, "chord", "Am"),
         ("U", None, "chord", "G7"),
     ]
-    keys += _diatonic_row("ASDFGHJ", 5, transpose)
-    keys += _diatonic_row("ZXCVBNM", 4, transpose)
+    keys += _diatonic_row("ASDFGHJ", 5)
+    keys += _diatonic_row("ZXCVBNM", 4)
     return Instrument("悠可琴", keys, transpose=transpose,
                       note="7 和弦键（Q C / W Dm / E Em / R F / T G / Y Am / U G7）+ 两排音高键")
 

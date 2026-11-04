@@ -254,3 +254,15 @@ EN = {
     '打开文件夹': 'Open folder',
     '确定': 'OK',
 }
+
+# Rhythm-grid and horn-duration findings.
+EN.update({
+    '检查超出人手极限的操作：① 同时按下超过 10 个键（人只有 10 根手指）；② 很长一段连续音全落在同一节拍网格上（间隔都相同，或都是同一单位的整数倍，像 MIDI 量化）；③ 圆号的按键时长全是同一单位的整数倍。原神的声音按约 21 ms 一块发出，短的轮指人手也会显得完全一致，所以只报很长的段。结果是证据而非定论。': 'Checks three patterns: more than 10 simultaneous keys; long runs on one timing grid (equal intervals or integer multiples, as in MIDI quantization); and horn hold durations at integer multiples of one unit. Genshin audio is emitted in roughly 21 ms blocks, so short human runs can also look exact. Only long runs are reported. Findings are evidence, not a verdict.',
+    '连续 {n} 个音的间隔全是 {ms} ms 的整数倍': 'Intervals of {n} consecutive notes are integer multiples of {ms} ms',
+    '间隔是约 {ms} ms 的 {steps} 倍（像 MIDI 量化的节奏）、持续 {dur} 秒，每个音都落在这个节拍网格 ±{tol} ms 以内（游戏发声精度）；很稳的人连续这么多音也会偏出（按计时模型模拟，误判概率 < 0.5%），可能是脚本，也可能是极稳的人，需结合其它证据': 'Intervals are {steps} times approximately {ms} ms (like MIDI quantization), spanning {dur} s, with every onset within ±{tol} ms of that timing grid (game audio resolution). Even very steady human timing usually drifts over such a long run (simulated false-positive probability < 0.5%). This may be a script or a very steady player; consider other evidence.',
+    '最长的同一节拍网格上的连续音 {n} 个（单位约 {ms} ms）': 'Longest run on one timing grid: {n} notes (unit approximately {ms} ms)',
+    '连续 {n} 个音按住的时长全都一样（约 {ms} ms）': '{n} consecutive notes have the same hold duration (approximately {ms} ms)',
+    '连续 {n} 个音的按键时长全是 {ms} ms 的整数倍': 'Hold durations of {n} consecutive notes are integer multiples of {ms} ms',
+    '{title}，误差都在 ±{tol} ms 以内（游戏发声精度）。MIDI 脚本按谱面时值按住，时长只会是少数几个值；人按住的时长会分散几十毫秒。只对圆号有效（松键即停声）': '{title}, all within ±{tol} ms (game audio resolution). MIDI scripts hold notes for a few score-defined durations; human holds vary by tens of milliseconds. Applies only to the horn, whose sound stops on release.',
+    '按键时长': 'Key hold duration',
+})

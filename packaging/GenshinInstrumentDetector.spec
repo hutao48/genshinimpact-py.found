@@ -12,6 +12,10 @@ ROOT = os.path.abspath(os.path.join(SPECPATH, ".."))
 sys.path.insert(0, ROOT)
 from app_version import APP_NAME, APP_VERSION, APP_URL  # noqa: E402
 
+# 直接运行 spec 时也要先验证界面依赖。PyInstaller 会把缺失的可导入模块当作
+# warning 继续构建，不能让没有 PySide6 的环境生成启动即崩溃的安装包。
+from PySide6 import QtCore, QtGui, QtWidgets  # noqa: F401,E402
+
 _v = tuple(int(p) for p in (APP_VERSION.split(".") + ["0", "0", "0"])[:4])
 version_info = VSVersionInfo(
     ffi=FixedFileInfo(filevers=_v, prodvers=_v, mask=0x3F, flags=0x0, OS=0x40004,

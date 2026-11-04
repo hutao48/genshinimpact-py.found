@@ -1,8 +1,8 @@
-<#
+﻿<#
   一键打包 Windows 版：单文件 exe + 安装程序
 
   用法（任意目录执行均可）：
-    powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1 [-Python <python.exe>] [-Iscc <ISCC.exe>]
+    powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1 [-Python <python.exe>] [-SkipTests] [-Iscc <ISCC.exe>]
 
   依赖：
     pip install -r packaging\requirements-build.txt
@@ -16,6 +16,7 @@
 #>
 param(
     [string]$Python = "python",
+    [switch]$SkipTests,
     [string]$Iscc = ""
 )
 $ErrorActionPreference = "Stop"
@@ -27,11 +28,55 @@ try {
     if (-not $Version) { throw "无法读取 app_version.APP_VERSION" }
     Write-Host "== 版本 $Version"
 
+    # 界面依赖缺失时 PyInstaller 不报错，只会打出一个启动即报 "No module named 'PySide6'" 的 exe：先检查
+    & $Python -c "import PySide6.QtWidgets, pyqtgraph, soundcard, numpy"
+    if ($LASTEXITCODE -ne 0) { throw "缺少界面依赖：先运行 $Python -m pip install -r packaging\requirements-build.txt" }
+
+    if (-not $SkipTests) {
+        Write-Host "== 回归测试 test_detection.py"
+        & $Python test_detection.py
+        if ($LASTEXITCODE -ne 0) { throw "test_detection.py 未通过" }
+        Write-Host "== 停顿与按键显示回归 test_stop_keys.py"
+        & $Python test_stop_keys.py
+        if ($LASTEXITCODE -ne 0) { throw "test_stop_keys.py 未通过" }
+        Write-Host "== 界面、悬浮窗与检测接口回归 test_integration.py"
+        & $Python test_integration.py
+        if ($LASTEXITCODE -ne 0) { throw "test_integration.py 未通过" }
+    }
+
     Write-Host "== PyInstaller"
     & $Python -m PyInstaller --noconfirm --clean --distpath dist --workpath build\pyinstaller packaging\GenshinInstrumentDetector.spec
     if ($LASTEXITCODE -ne 0) { throw "PyInstaller 失败" }
     $exe = Join-Path $Root "dist\原神乐器演奏检测器.exe"
     if (-not (Test-Path $exe)) { throw "未找到 $exe" }
+
+    Write-Host "== 检查成品界面依赖"
+    & $Python packaging\verify_windows_bundle.py $exe
+    if ($LASTEXITCODE -ne 0) { throw "成品 EXE 缺少界面依赖" }
+
+    Write-Host "== 成品界面启动与渲染检查"
+    $guiReport = Join-Path $Root ("build\gui-self-test-" + [guid]::NewGuid().ToString("N") + ".json")
+    $oldQtPlatform = $env:QT_QPA_PLATFORM
+    try {
+        $env:QT_QPA_PLATFORM = "offscreen"
+        $guiProcess = Start-Process -FilePath $exe -ArgumentList @("--self-test-gui", ('"{0}"' -f $guiReport)) -WindowStyle Hidden -PassThru
+        if (-not $guiProcess.WaitForExit(30000)) {
+            & taskkill.exe /PID $guiProcess.Id /T /F | Out-Null
+            throw "成品界面启动检查超时"
+        }
+        if ($guiProcess.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $guiReport)) {
+            throw "成品界面启动失败，未生成成功报告"
+        }
+        $guiResult = Get-Content -LiteralPath $guiReport -Raw | ConvertFrom-Json
+        if (-not $guiResult.ok -or -not $guiResult.frozen -or $guiResult.version -ne $Version) {
+            throw "成品界面检查结果异常"
+        }
+        Write-Host "== 界面检查通过：Qt $($guiResult.qt_version)，版本 $Version"
+    }
+    finally {
+        if ($null -eq $oldQtPlatform) { Remove-Item Env:QT_QPA_PLATFORM -ErrorAction SilentlyContinue }
+        else { $env:QT_QPA_PLATFORM = $oldQtPlatform }
+    }
     $portable = Join-Path $Root "dist\GenshinInstrumentDetector-$Version-win64-portable.exe"
     Copy-Item $exe $portable -Force
 

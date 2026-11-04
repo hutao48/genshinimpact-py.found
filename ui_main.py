@@ -779,12 +779,13 @@ class KeyPanel(QWidget):
                                    tip=T("和弦键 {key}：{chord}", key=ch, chord=extra),
                                    chord=str(extra))
                 else:
+                    pitch = midi + inst.transpose
                     try:
-                        degree = DIATONIC_OFFSETS.index(midi % 12)
+                        degree = DIATONIC_OFFSETS.index(pitch % 12)
                     except ValueError:
                         degree = 0
-                    sol = midi_to_solfege(midi)
-                    note = midi_to_name(midi)
+                    sol = midi_to_solfege(pitch)
+                    note = midi_to_name(pitch)
                     tile = KeyTile(ch, "pitch", self.style,
                                    tip=T("键 {key} = {note}", key=ch, note=note),
                                    solfege=sol or note, note=note, degree=degree)
@@ -1749,7 +1750,7 @@ class DetectWorker(QThread):
                 err_count = 0
                 blocks += 1
                 res = self.detector.feed(block)
-                for f in self.screener.process(block, self.detector):
+                for f in self.screener.process(block, self.detector, events=res["note_events"]):
                     self.sig_finding.emit(dict(f))
                 if blocks % 24 == 0:
                     summ = self.screener.summary()
@@ -1807,7 +1808,7 @@ class DetectWorker(QThread):
 
 # ================================================================ 主窗口
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, self_test=False):
         super().__init__()
         self.cfg = settings.load()
         self._update_info = None
@@ -1830,9 +1831,10 @@ class MainWindow(QMainWindow):
         self._chart_timer.setInterval(400)
         self._chart_timer.timeout.connect(self._tick_chart)
         self._chart_timer.start()
-        QTimer.singleShot(0, self._restore_float)
-        if self.cfg.get("check_updates", "1") == "1" and not os.environ.get("GID_NO_UPDATE"):
-            QTimer.singleShot(1800, lambda: self.check_updates(silent=True))
+        if not self_test:
+            QTimer.singleShot(0, self._restore_float)
+            if self.cfg.get("check_updates", "1") == "1" and not os.environ.get("GID_NO_UPDATE"):
+                QTimer.singleShot(1800, lambda: self.check_updates(silent=True))
 
     def showEvent(self, e):
         super().showEvent(e)
@@ -2118,9 +2120,8 @@ class MainWindow(QMainWindow):
         _repolish(self.pill)
 
     def _screen_help(self):
-        return T("检查两类超出人手极限的操作：① 同时按下超过 10 个键（人只有 10 根手指）；"
-                 "② 很长一段连续音的间隔完全一致（机器级精度）。原神的声音按约 21 ms 一块发出，"
-                 "短的轮指人手也会显得完全一致，所以只报很长的段。结果是证据而非定论。")
+        return T('检查超出人手极限的操作：① 同时按下超过 10 个键（人只有 10 根手指）；② 很长一段连续音全落在同一节拍网格上（间隔都相同，或都是同一单位的整数倍，像 MIDI 量化）；③ 圆号的按键时长全是同一单位的整数倍。原神的声音按约 21 ms 一块发出，短的轮指人手也会显得完全一致，所以只报很长的段。结果是证据而非定论。')
+
 
     def _set_page(self, i):
         self.page_btns[i].setChecked(True)
@@ -2389,7 +2390,7 @@ class MainWindow(QMainWindow):
             if ch in labels:
                 entry = key_map.get(ch)
                 if entry and entry[2] == "pitch":
-                    names.append(f"{ch}·{midi_to_name(entry[1])}")
+                    names.append(f"{ch}·{midi_to_name(entry[1] + self._current_inst.transpose)}")
                 elif entry:
                     names.append(f"{ch}·{entry[3]}")
         text = "  ".join(names) if names else "—"
@@ -2899,7 +2900,7 @@ class SettingsDialog(QDialog):
         super().reject()
 
 
-def main():
+def main(self_test_path=None):
     i18n.init()
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
@@ -2910,12 +2911,40 @@ def main():
     cfg = settings.load()
     mode = os.environ.get("GID_THEME") or cfg.get("theme", "system")
     apply_theme(app, mode)
-    w = MainWindow()
+    w = MainWindow(self_test=bool(self_test_path))
     w.show()
     try:
         app.styleHints().colorSchemeChanged.connect(lambda _: w.on_system_theme_changed())
     except Exception:
         pass
+    if self_test_path:
+        # 构建时由成品 EXE 执行：真正导入 Qt、构造主窗口并渲染，成功后自动退出。
+        # 不启动音频采集；缺少打包依赖时无法生成成功报告，构建流程必须失败。
+        def finish_self_test():
+            import json
+            from pathlib import Path
+            from PySide6.QtCore import qVersion
+            try:
+                report_path = Path(self_test_path)
+                report_path.parent.mkdir(parents=True, exist_ok=True)
+                rendered = w.grab().save(str(report_path.with_suffix(".png")))
+                coverage = i18n.coverage()
+                catalogs_ok = all(coverage[k] > 0 for k in ("en", "ja", "zh-Hant", "zh-TW"))
+                report = {"ok": bool(w.isVisible() and rendered and catalogs_ok),
+                          "language": i18n.current(), "translations": coverage,
+                          "version": APP_VERSION, "qt_version": qVersion(),
+                          "frozen": bool(getattr(sys, "frozen", False)),
+                          "executable": sys.executable, "window_title": w.windowTitle()}
+                report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+                app.exit(0 if report["ok"] else 1)
+            except Exception:
+                import traceback
+                traceback.print_exc()
+                app.exit(1)
+        QTimer.singleShot(500, finish_self_test)
+    # 诊断/自动化支持：设置 GID_AUTOSTART=1 时自动开始监听（供测试与远程排查用）
+    elif os.environ.get("GID_AUTOSTART") == "1":
+        QTimer.singleShot(600, w.start_worker)
     sys.exit(app.exec())
 
 

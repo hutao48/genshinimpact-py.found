@@ -2,9 +2,9 @@
 #   推送形如 v1.0.0 的 tag：构建 Windows（单文件 exe + 安装程序）与 Android（APK），并发布到 GitHub Releases
 #   手动运行（Actions → 构建与发布 → Run workflow）：只构建、上传为 Artifacts，不发布
 #
-# Android 正式签名（可选）：在仓库 Settings → Secrets and variables → Actions 中配置
+# Android 正式签名：在仓库 Settings → Secrets and variables → Actions 中配置
 #   ANDROID_KEYSTORE_BASE64（keystore 文件的 base64）、ANDROID_KEYSTORE_PASSWORD、ANDROID_KEY_ALIAS、ANDROID_KEY_PASSWORD
-#   未配置时用 CI 临时生成的调试密钥签名（可直接安装，但每次构建签名不同，升级需先卸载旧版）
+#   未配置固定发布密钥时构建失败，不生成临时调试签名的发布包。
 name: 构建与发布
 
 on:
@@ -37,7 +37,7 @@ jobs:
           $found = (Get-Command iscc -ErrorAction SilentlyContinue) -or (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe") -or (Test-Path "$env:ProgramFiles\Inno Setup 6\ISCC.exe")
           if (-not $found) { choco install innosetup --no-progress -y }
 
-      - name: 打包
+      - name: 回归测试、打包与成品自检
         shell: pwsh
         run: ./packaging/build_windows.ps1 -Python python
 

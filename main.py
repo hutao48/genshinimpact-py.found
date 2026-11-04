@@ -97,7 +97,7 @@ def analyze_file(wav_path, out_path=None, inst_name=None):
     block = 2048
     for i in range(0, len(x), block):
         r = det.feed(x[i:i + block])
-        for f in scr.process(x[i:i + block], det):
+        for f in scr.process(x[i:i + block], det, events=r["note_events"]):
             found[f["id"]] = f
         events.extend(r["note_events"])
         if r["bpm"] is not None:
@@ -107,7 +107,7 @@ def analyze_file(wav_path, out_path=None, inst_name=None):
         tonality = r["tonality"] or tonality
     z = np.zeros(sr, dtype=np.float32)                    # 补 1 s 静音让余音落音
     r = det.feed(z)
-    for f in scr.process(z, det) + scr.process(np.zeros(0, dtype=np.float32), det, final=True):
+    for f in scr.process(z, det, events=r["note_events"]) + scr.process(np.zeros(0, dtype=np.float32), det, final=True):
         found[f["id"]] = f
     events.extend(r["note_events"])
     events.sort(key=lambda e: e["t"])
@@ -169,6 +169,12 @@ def main():
     from i18n import init as i18n_init
     i18n_init()
     args = sys.argv[1:]
+    if args and args[0] == "--self-test-gui":
+        if len(args) != 2:
+            raise ValueError("用法：--self-test-gui 界面检查结果.json")
+        from ui_main import main as ui_main
+        ui_main(self_test_path=args[1])
+        return
     if args and args[0] in ("--analyze", "-a"):
         if len(args) < 2:
             print(__doc__)
