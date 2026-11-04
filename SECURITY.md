@@ -4,8 +4,8 @@
 
 | Platform | Supported |
 |---|---|
-| Windows | 1.1.3 (latest) |
-| Android | 1.1.1 (latest; unchanged in 1.1.3) |
+| Windows | 1.1.5 (latest) |
+| Android | 1.1.1 (latest; unchanged in 1.1.5) |
 
 Older releases are not maintained. Please upgrade before reporting an issue that may already be fixed.
 
@@ -38,4 +38,4 @@ These are packaging/provenance limitations, not remote-code-execution vulnerabil
 
 ## Dependency and code checks
 
-Release builds use pinned Python packaging dependencies (`packaging/requirements-build.txt`); the repository's dependency pins were checked against OSV/pip-audit with no known advisories at the time of the 1.1.3 release. Static review covers the Python, Kotlin and GitHub Actions code; the CI workflow pins third-party actions to commit SHAs and verifies that a release tag matches `app_version.py`.
+Release builds use pinned Python packaging dependencies (`packaging/requirements-build.txt`); the repository's dependency pins were checked against OSV/pip-audit with no known advisories at the time of the 1.1.5 release. Static review covers the Python, Kotlin and GitHub Actions code; the CI workflow pins third-party actions to commit SHAs and verifies that a release tag matches `app_version.py`.

@@ -1123,6 +1123,160 @@ class BpmChart(QWidget):
 
 
 # ================================================================ 音符时长表
+class KeyTimeline(QWidget):
+    """MIDI 编辑风格的按键时间线：横轴时间，纵轴键位，横条=按下到抬起。"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMinimumHeight(140)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.lanes = []
+        self.key_lane = {}
+        self.events = []
+        self.active = {}
+        self.now = 0.0
+        self.window = 20.0
+        self.instrument = None
+        self.style = KEY_STYLE_DEFAULT
+
+    def set_instrument(self, inst):
+        self.instrument = inst
+        self.style = _key_style(inst.name)
+        self.lanes = []
+        self.key_lane = {}
+        self.events = []
+        self.active = {}
+        chords, pitches = [], []
+        for entry in inst.keys:
+            key, midi, kind, extra = entry[0], entry[1], entry[2], entry[3]
+            if kind == "chord":
+                chords.append((key, midi, kind, extra))
+            else:
+                pitches.append((key, midi, kind, extra))
+        pitches.sort(key=lambda e: -e[1])       # 高音在上，低音在下
+        for key, midi, kind, extra in chords + pitches:
+            note = str(extra) if kind == "chord" else midi_to_name(midi)
+            self.lanes.append({"key": key, "kind": kind, "note": note})
+            self.key_lane[key] = len(self.lanes) - 1
+        self.update()
+
+    def update_state(self, t, labels):
+        t = float(t)
+        self.now = max(self.now, t)
+        labels = set(labels)
+        for key in [k for k in self.active if k not in labels]:
+            start = self.active.pop(key)
+            self.events.append((key, start, t))
+        for key in labels:
+            if key not in self.active and key in self.key_lane:
+                self.active[key] = t
+        if len(self.events) > 1200:
+            del self.events[:len(self.events) - 1200]
+        self.update()
+
+    def tick(self, t):
+        if t is None:
+            return
+        if float(t) > self.now + 0.05:
+            self.now = float(t)
+            if self.active:
+                self.update()
+
+    def close_all(self, t=None):
+        if t is not None:
+            self.now = max(self.now, float(t))
+        for key, start in list(self.active.items()):
+            self.events.append((key, start, self.now))
+        self.active.clear()
+        self.update()
+
+    def clear(self):
+        self.events = []
+        self.active = {}
+        self.now = 0.0
+        self.update()
+
+    def paintEvent(self, e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w, h = self.width(), self.height()
+        if not self.lanes:
+            p.setPen(QColor(C["faint"]))
+            p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, T("选择乐器后显示按键时间线"))
+            p.end()
+            return
+        left, top, bottom = 48, 4, 14
+        plot_w = max(20, w - left - 4)
+        lane_h = max(4.0, (h - top - bottom) / len(self.lanes))
+        t_end = max(self.now, 1.0)
+        t_start = max(0.0, t_end - self.window)
+        span = max(0.5, t_end - t_start)
+
+        def x_at(t):
+            return left + (t - t_start) / span * plot_w
+
+        # 时间网格与刻度
+        if t_end < 12:
+            step = 1.0
+        else:
+            step = 5.0 if self.window >= 20 else 2.0
+        sec = math.ceil(t_start / step) * step
+        grid_pen = QPen(QColor(255, 255, 255, 22 if THEME_EFFECTIVE == "dark" else 40), 1)
+        p.setFont(_num_font(max(6, min(9, int(lane_h * 0.9))), bold=False))
+        while sec <= t_end + 0.01:
+            x = x_at(sec)
+            p.setPen(grid_pen)
+            p.drawLine(QPointF(x, top), QPointF(x, h - bottom))
+            p.setPen(QColor(C["faint"]))
+            m, s = divmod(int(round(sec)), 60)
+            p.drawText(QRectF(x - 18, h - bottom + 1, 36, bottom),
+                       Qt.AlignmentFlag.AlignCenter, f"{m}:{s:02d}")
+            sec += step
+
+        # 轨道与按键名
+        accent = QColor(self.style["accent"])
+        chord_color = QColor(self.style.get("chord", self.style["accent2"]))
+        p.setFont(_num_font(max(6, min(9, int(lane_h * 0.85))), bold=False))
+        for i, lane in enumerate(self.lanes):
+            y = top + i * lane_h
+            p.setPen(QPen(QColor(255, 255, 255, 12 if THEME_EFFECTIVE == "dark" else 22), 1))
+            p.drawLine(QPointF(left, y + lane_h), QPointF(w - 2, y + lane_h))
+            p.setPen(QColor(C["dim"]))
+            txt = f"{lane['key']}  {lane['note']}"
+            p.drawText(QRectF(0, y, left - 3, lane_h),
+                       Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, txt)
+
+        # 按下 → 抬起 的横条
+        for key, start, end in self.events:
+            lane = self.key_lane.get(key)
+            if lane is None or start > t_end or end < t_start or end <= start:
+                continue
+            self._draw_bar(p, x_at(max(start, t_start)), x_at(min(end, t_end)),
+                           top + lane * lane_h, lane_h,
+                           chord_color if self.lanes[lane]["kind"] == "chord" else accent)
+        for key, start in self.active.items():
+            lane = self.key_lane.get(key)
+            if lane is None or start > t_end:
+                continue
+            self._draw_bar(p, x_at(max(start, t_start)), x_at(t_end),
+                           top + lane * lane_h, lane_h,
+                           chord_color if self.lanes[lane]["kind"] == "chord" else accent, active=True)
+        p.end()
+
+    @staticmethod
+    def _draw_bar(p, x1, x2, y, lane_h, color, active=False):
+        if x2 <= x1:
+            return
+        bh = max(2.5, lane_h * 0.62)
+        c = QColor(color)
+        if not active:
+            c.setAlpha(205)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(c)
+        p.drawRoundedRect(QRectF(x1, y + (lane_h - bh) / 2.0, max(2.0, x2 - x1), bh),
+                          bh / 2.0, bh / 2.0)
+
+
 class _FloatDragBar(QFrame):
     """悬浮窗标题栏：按住空白处拖动窗口。"""
 
@@ -1211,8 +1365,8 @@ class FloatingWindow(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.setWindowTitle(T("演奏监视 · 悬浮窗"))
-        self.setMinimumSize(720, 380)
-        self.resize(920, 460)
+        self.setMinimumSize(720, 420)
+        self.resize(920, 520)
         self._placed = False
 
         root = QHBoxLayout(self)
@@ -1265,56 +1419,21 @@ class FloatingWindow(QWidget):
         h.addWidget(btn_close)
         rv.addWidget(header)
 
-        grid = QGridLayout()
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(8)
-        grid.setVerticalSpacing(1)
-        keys_box, self.lab_keys = self._metric(T("当前按键"), "cyan", size=11)
-        chord_box, self.lab_chord = self._metric(T("和弦"), "green", size=12)
-        key_box, self.lab_key = self._metric(T("调性"), "violet", size=12)
-        bpm_box, self.lab_bpm = self._metric(T("当前 BPM"), "gold", big=True)
-        grid.addWidget(keys_box, 0, 0, 1, 3)
-        grid.addWidget(chord_box, 1, 0)
-        grid.addWidget(key_box, 1, 1)
-        grid.addWidget(bpm_box, 1, 2)
-        grid.setColumnStretch(0, 1)
-        grid.setColumnStretch(1, 1)
-        grid.setColumnStretch(2, 1)
-        rv.addLayout(grid)
-
+        # 上方：BPM 走向（原指标区）
         self.chart = BpmChart(compact=True, transparent=True)
         self.chart.setMinimumHeight(120)
         rv.addWidget(self.chart, 1)
+
+        # 下方：MIDI 编辑风格的按键按下/抬起时间线（原 BPM 图位置）
+        self.timeline = KeyTimeline()
+        self.timeline.setMinimumHeight(170)
+        rv.addWidget(self.timeline, 1)
 
         foot = QHBoxLayout()
         foot.setContentsMargins(0, 0, 0, 0)
         foot.addStretch(1)
         foot.addWidget(_ResizeGrip(self, self))
         rv.addLayout(foot)
-
-    @staticmethod
-    def _metric(caption, color, big=False, size=12):
-        box = QWidget()
-        box.setStyleSheet("background: transparent;")
-        lay = QVBoxLayout(box)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(0)
-        cap = QLabel(T(caption))
-        cap.setObjectName("floatCap")
-        val = QLabel("—")
-        val.setObjectName("floatVal")
-        styles = f"color:{C[color]};font-size:{24 if big else size}px;font-weight:700;background:transparent;"
-        val.setStyleSheet(styles)
-        cap.setStyleSheet("background: transparent;")
-        for lab in (cap, val):
-            eff = QGraphicsDropShadowEffect(lab)
-            eff.setBlurRadius(5)
-            eff.setOffset(0, 1)
-            eff.setColor(QColor(0, 0, 0, 235))
-            lab.setGraphicsEffect(eff)
-        lay.addWidget(cap)
-        lay.addWidget(val)
-        return box, val
 
     # ---------------------------------------------------------- 数据
     def sync_instruments(self, names, current):
@@ -1333,26 +1452,22 @@ class FloatingWindow(QWidget):
     def set_instrument(self, inst, index=None):
         self.key_panel.set_instrument(inst)
         self.key_panel.set_hints(True)
+        self.timeline.set_instrument(inst)
         if index is not None:
             self.set_current_index(index)
 
     def set_active(self, labels):
         self.key_panel.set_active(labels)
 
-    def set_keys_text(self, text):
-        self.lab_keys.setText(text or "—")
+    def update_key_state(self, t, labels):
+        self.timeline.update_state(t, labels)
 
-    def set_chord(self, text):
-        self.lab_chord.setText(text or "—")
-
-    def set_tonality(self, text):
-        self.lab_key.setText(text or "—")
-
-    def set_bpm(self, text):
-        self.lab_bpm.setText(text or "—")
+    def tick_timeline(self, t):
+        self.timeline.tick(t)
 
     def add_bpm(self, t, v):
         self.chart.add(t, v)
+        self.chart.refresh()
 
     def set_bpm_data(self, t, v):
         self.chart.t = list(t)
@@ -1372,6 +1487,7 @@ class FloatingWindow(QWidget):
     def apply_theme(self):
         self.chart.apply_theme()
         self.key_panel.update()
+        self.timeline.update()
 
     def hide_by_user(self):
         self.hide()
@@ -1572,6 +1688,7 @@ class FindingsModel(QAbstractTableModel):
 # ================================================================ 检测工作线程
 class DetectWorker(QThread):
     sig_keys = Signal(object)      # set(active labels)
+    sig_key_timeline = Signal(float, object)  # (音频时刻 s, set(active labels))：按下/抬起时间线
     sig_note = Signal(object)      # dict 音符事件
     sig_chord = Signal(str)
     sig_tonality = Signal(str)
@@ -1650,6 +1767,7 @@ class DetectWorker(QThread):
                     self._active_labels = new_active
                     last_keys_emit = now
                     self.sig_keys.emit(set(new_active))
+                    self.sig_key_timeline.emit(float(res["t"]), set(new_active))
 
                 for ev in res["note_events"]:
                     self.sig_note.emit(ev)
@@ -1796,7 +1914,7 @@ class MainWindow(QMainWindow):
         self.btn_float.setObjectName("pillBtn")
         self.btn_float.setCheckable(True)
         self.btn_float.setToolTip(T("显示常驻前台的键位/和弦/BPM 悬浮窗"))
-        self.btn_float.setChecked(self.cfg.get("float_window", "1") == "1")
+        self.btn_float.setChecked(self.cfg.get("float_window", "0") == "1")
         self.btn_float.toggled.connect(self._toggle_float)
         top.addWidget(self.btn_float)
         self.btn_start = QPushButton(T("▶  开始监听"))
@@ -2054,6 +2172,8 @@ class MainWindow(QMainWindow):
     def _tick_chart(self):
         if self.chart.dirty:
             self.chart.refresh()
+        if self.float_win is not None:
+            self.float_win.tick_timeline(self.chart.last_time())
 
     def refresh_chart(self):
         self.chart.refresh()
@@ -2087,7 +2207,7 @@ class MainWindow(QMainWindow):
         self.btn_float.blockSignals(False)
 
     def _restore_float(self):
-        if self.cfg.get("float_window", "1") == "1":
+        if self.cfg.get("float_window", "0") == "1":
             self.show_float()
         else:
             self._set_float_button(False)
@@ -2117,10 +2237,6 @@ class MainWindow(QMainWindow):
                             self.cmb_instrument.currentIndex())
         fw.set_instrument(self._current_inst, self.cmb_instrument.currentIndex())
         fw.set_active(self._active_labels)
-        fw.set_keys_text(self.lab_notes.text())
-        fw.set_chord(self.lab_chord.text())
-        fw.set_tonality(self.lab_key.text())
-        fw.set_bpm(self.lab_bpm.text())
         fw.set_bpm_data(self.chart.t, self.chart.v)
         fw.set_mode(self.chart.mode)
         fw.show()
@@ -2174,6 +2290,7 @@ class MainWindow(QMainWindow):
             self._current_inst, dev_id, is_loop,
             self.slider_sens.value() / 100.0, parent=self)
         self.worker.sig_keys.connect(self.on_keys)
+        self.worker.sig_key_timeline.connect(self.on_key_timeline)
         self.worker.sig_note.connect(self.on_note)
         self.worker.sig_chord.connect(self.on_chord)
         self.worker.sig_tonality.connect(self.on_tonality)
@@ -2218,10 +2335,8 @@ class MainWindow(QMainWindow):
         self.lab_bpm.setText("—")
         if self.float_win is not None:
             self.float_win.set_active(set())
-            self.float_win.set_keys_text("—")
-            self.float_win.set_chord("—")
-            self.float_win.set_tonality("—")
-            self.float_win.set_bpm("—")
+            self.float_win.timeline.close_all(
+                max(self.chart.last_time(), self.float_win.timeline.now))
         self._set_pill(T("○  未在监听"), "off")
 
     def restart_worker(self):
@@ -2279,18 +2394,16 @@ class MainWindow(QMainWindow):
                     names.append(f"{ch}·{entry[3]}")
         text = "  ".join(names) if names else "—"
         self.lab_notes.setText(text)
+
+    def on_key_timeline(self, t, labels):
         if self.float_win is not None:
-            self.float_win.set_keys_text(text)
+            self.float_win.update_key_state(float(t) + self._t_offset, labels)
 
     def on_chord(self, text):
         self.lab_chord.setText(text or "—")
-        if self.float_win is not None:
-            self.float_win.set_chord(text or "—")
 
     def on_tonality(self, text):
         self.lab_key.setText(text or "—")
-        if self.float_win is not None:
-            self.float_win.set_tonality(text or "—")
 
     def on_note(self, ev):
         t = ev["t"] + self._t_offset
@@ -2310,15 +2423,60 @@ class MainWindow(QMainWindow):
     def on_bpm(self, bpm):
         text = "—" if math.isnan(bpm) else f"{bpm:.1f}"
         self.lab_bpm.setText(text)
-        if self.float_win is not None:
-            self.float_win.set_bpm(text)
 
     def on_bpm_sample(self, t, bpm):
         self.chart.add(t + self._t_offset, bpm)
         if self.float_win is not None:
             self.float_win.add_bpm(t + self._t_offset, bpm)
 
+    def _write_export_files(self, path):
+        root, ext = os.path.splitext(path)
+        if not ext:
+            path = root + ".csv"
+        root = os.path.splitext(path)[0]
+        bpm_path = root + "_BPM.csv"
+        scr_path = root + T("_排查.csv")
+        parent = os.path.dirname(os.path.abspath(path))
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        with open(path, "w", encoding="utf-8-sig", newline="") as f:
+            w = csv.writer(f)
+            w.writerow([T("开始时间(s)"), T("按键"), T("音名"), T("唱名"),
+                        T("时长(ms)"), T("间隔(ms)"), T("结束方式")])
+            for r in self.notes.rows:
+                t, key, name, sol, dur, ioi, end = r["raw"]
+                w.writerow([f"{t:.3f}", key, name, sol, f"{dur:.0f}",
+                            "" if ioi is None else f"{ioi:.0f}", end])
+        with open(bpm_path, "w", encoding="utf-8-sig", newline="") as f:
+            w = csv.writer(f)
+            w.writerow([T("时间(s)"), "BPM"])
+            for t, v in zip(self.chart.t, self.chart.v):
+                w.writerow([f"{t:.1f}", f"{v:.1f}"])
+        with open(scr_path, "w", encoding="utf-8-sig", newline="") as f:
+            w = csv.writer(f)
+            w.writerow([T("时间(s)"), T("检查项"), T("结论"), T("现象"), T("说明")])
+            for r in self.findings.rows:
+                ff = r["f"]
+                w.writerow([f"{r['t']:.3f}", kind_text(ff["kind"]), level_text(ff["level"]),
+                            ff.get("title", ""), ff.get("text", "")])
+            if self._screen_text:
+                w.writerow([])
+                w.writerow([T("总结"), self._screen_text])
+        return path, bpm_path, scr_path
+
     def on_export(self):
+        # 悬浮窗是置顶的；导出/保存对话框必须先让它让位，否则可能被挡在后面。
+        restore_float = self.float_win is not None and self.float_win.isVisible()
+        if restore_float:
+            self.float_win.hide()
+        try:
+            self._export_ui()
+        finally:
+            if restore_float and self.float_win is not None:
+                self.float_win.show()
+                self.float_win.raise_()
+
+    def _export_ui(self):
         if not self.notes.rows and not self.chart.t and not self.findings.rows:
             QMessageBox.information(self, T("导出记录"), T("还没有记录可以导出。"))
             return
@@ -2327,42 +2485,29 @@ class MainWindow(QMainWindow):
             base_dir = os.path.expanduser("~")
         stamp = time.strftime("%Y%m%d_%H%M%S")
         default = os.path.join(base_dir, T("演奏记录_{timestamp}.csv", timestamp=stamp))
-        path, _ = QFileDialog.getSaveFileName(self, T("导出记录"), default, T("CSV 表格 (*.csv)"))
+        path, _ = QFileDialog.getSaveFileName(
+            self, T("导出记录"), default, T("CSV 表格 (*.csv)"),
+            options=QFileDialog.Option.DontUseNativeDialog)
         if not path:
             return
-        root, ext = os.path.splitext(path)
-        if not ext:
-            path = root + ".csv"
-        bpm_path = os.path.splitext(path)[0] + "_BPM.csv"
-        scr_path = os.path.splitext(path)[0] + T("_排查.csv")
         try:
-            with open(path, "w", encoding="utf-8-sig", newline="") as f:
-                w = csv.writer(f)
-                w.writerow([T("开始时间(s)"), T("按键"), T("音名"), T("唱名"),
-                            T("时长(ms)"), T("间隔(ms)"), T("结束方式")])
-                for r in self.notes.rows:
-                    t, key, name, sol, dur, ioi, end = r["raw"]
-                    w.writerow([f"{t:.3f}", key, name, sol, f"{dur:.0f}", "" if ioi is None else f"{ioi:.0f}", end])
-            with open(bpm_path, "w", encoding="utf-8-sig", newline="") as f:
-                w = csv.writer(f)
-                w.writerow([T("时间(s)"), "BPM"])
-                for t, v in zip(self.chart.t, self.chart.v):
-                    w.writerow([f"{t:.1f}", f"{v:.1f}"])
-            with open(scr_path, "w", encoding="utf-8-sig", newline="") as f:
-                w = csv.writer(f)
-                w.writerow([T("时间(s)"), T("检查项"), T("结论"), T("现象"), T("说明")])
-                for r in self.findings.rows:
-                    ff = r["f"]
-                    w.writerow([f"{r['t']:.3f}", kind_text(ff["kind"]), level_text(ff["level"]),
-                                ff.get("title", ""), ff.get("text", "")])
-                if self._screen_text:
-                    w.writerow([])
-                    w.writerow([T("总结"), self._screen_text])
-        except OSError as e:
+            paths = self._write_export_files(path)
+        except Exception as e:
             QMessageBox.critical(self, T("导出失败"), T("写入文件失败：{error}", error=e))
             return
-        files = T("、").join([os.path.basename(path), os.path.basename(bpm_path), os.path.basename(scr_path)])
-        self.statusBar().showMessage(T("已导出：{files}（{dir}）", files=files, dir=os.path.dirname(path)), 10000)
+        files = T("、").join(os.path.basename(p) for p in paths)
+        out_dir = os.path.dirname(os.path.abspath(paths[0]))
+        self.statusBar().showMessage(T("已导出：{files}（{dir}）", files=files, dir=out_dir), 10000)
+        box = QMessageBox(self)
+        box.setWindowTitle(T("导出完成"))
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setText(T("已导出 {n} 个文件：\n{files}\n\n目录：{dir}",
+                     n=len(paths), files="\n".join(os.path.basename(p) for p in paths), dir=out_dir))
+        open_btn = box.addButton(T("打开文件夹"), QMessageBox.ButtonRole.ActionRole)
+        box.addButton(T("确定"), QMessageBox.ButtonRole.AcceptRole)
+        box.exec()
+        if box.clickedButton() is open_btn:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(out_dir))
 
     def on_clear(self):
         self.key_panel.set_active(set())
@@ -2372,11 +2517,8 @@ class MainWindow(QMainWindow):
         self.chart.clear()
         if self.float_win is not None:
             self.float_win.set_active(set())
-            self.float_win.set_keys_text("—")
-            self.float_win.set_chord("—")
-            self.float_win.set_tonality("—")
-            self.float_win.set_bpm("—")
             self.float_win.clear_bpm()
+            self.float_win.timeline.clear()
         self.notes.clear()
         self.findings.clear()
         self._screen_text = ""
@@ -2625,7 +2767,7 @@ class SettingsDialog(QDialog):
         self.cmb_theme.currentIndexChanged.connect(self._preview_theme)
         tv.addWidget(self.cmb_theme)
         self.chk_float = QCheckBox(T("启动时显示悬浮窗"))
-        self.chk_float.setChecked((parent.cfg.get("float_window", "1") if parent else "1") == "1")
+        self.chk_float.setChecked((parent.cfg.get("float_window", "0") if parent else "0") == "1")
         self.chk_float.setToolTip(T("常驻前台的键位、和弦、BPM、调性与 BPM 曲线窗口。"))
         tv.addWidget(self.chk_float)
         root.addWidget(theme_box)

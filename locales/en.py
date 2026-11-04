@@ -249,4 +249,8 @@ EN = {
     '在悬浮窗中切换检测乐器': 'Switch the detected instrument from the floating window',
     '拖动调整悬浮窗大小': 'Drag to resize the floating window',
     '拖动移动悬浮窗': 'Drag to move the floating window',
+    '导出完成': 'Export complete',
+    '已导出 {n} 个文件：\n{files}\n\n目录：{dir}': 'Exported {n} file(s):\n{files}\n\nFolder: {dir}',
+    '打开文件夹': 'Open folder',
+    '确定': 'OK',
 }

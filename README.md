@@ -1,6 +1,6 @@
 # Genshin Instrument Performance Detector
 
-**Version**: Windows 1.1.3 / Android 1.1.1 | **Website**: [hutao48.github.io/genshinimpact-py.found](https://hutao48.github.io/genshinimpact-py.found/) | **Downloads**: [GitHub Releases](https://github.com/hutao48/genshinimpact-py.found/releases/latest) | [Chinese user guide (中文使用说明)](使用说明.md)
+**Version**: Windows 1.1.5 / Android 1.1.1 | **Website**: [hutao48.github.io/genshinimpact-py.found](https://hutao48.github.io/genshinimpact-py.found/) | **Downloads**: [GitHub Releases](https://github.com/hutao48/genshinimpact-py.found/releases/latest) | [Chinese user guide (中文使用说明)](使用说明.md)
 
 > The application starts in Simplified Chinese on Simplified Chinese systems, Traditional Chinese on Traditional Chinese systems, and English elsewhere. You can switch between **简体中文 / 繁體中文 / 正體中文（臺灣）/ English / 日本語** in **Settings**.
 
@@ -8,27 +8,28 @@
 
 | Platform | File | Notes |
 |---|---|---|
-| Windows | `GenshinInstrumentDetector-1.1.3-win64-setup.exe` | Installer (per-user, no administrator; Start Menu/desktop shortcuts and uninstaller) |
-| Windows | `GenshinInstrumentDetector-1.1.3-win64-portable.exe` | Portable single file; double-click to run |
+| Windows | `GenshinInstrumentDetector-1.1.5-win64-setup.exe` | Installer (per-user, no administrator; Start Menu/desktop shortcuts and uninstaller) |
+| Windows | `GenshinInstrumentDetector-1.1.5-win64-portable.exe` | Portable single file; double-click to run |
 | Android | `GenshinInstrumentDetector-1.1.1-android.apk` | Android 7.0+; includes the built-in update check and fixed release signing since 1.1.0 |
 | Checksums | `SHA256SUMS.txt` | SHA-256 for all release files |
 
 Direct links:
 
-- **Windows installer** — <https://github.com/hutao48/genshinimpact-py.found/releases/download/v1.1.3/GenshinInstrumentDetector-1.1.3-win64-setup.exe>
-- **Windows portable** — <https://github.com/hutao48/genshinimpact-py.found/releases/download/v1.1.3/GenshinInstrumentDetector-1.1.3-win64-portable.exe>
+- **Windows installer** — <https://github.com/hutao48/genshinimpact-py.found/releases/download/v1.1.5/GenshinInstrumentDetector-1.1.5-win64-setup.exe>
+- **Windows portable** — <https://github.com/hutao48/genshinimpact-py.found/releases/download/v1.1.5/GenshinInstrumentDetector-1.1.5-win64-portable.exe>
 - **Android APK** — <https://github.com/hutao48/genshinimpact-py.found/releases/download/v1.1.1/GenshinInstrumentDetector-1.1.1-android.apk>
 
 The executables are not code-signed, so Windows SmartScreen may show "Unknown publisher"; choose **More info → Run anyway**. The APK uses a fixed release key since 1.1.0; only users upgrading from 1.0.x need to uninstall the debug-signed version once.
 
 The Windows installer is also hosted directly on the project website (`docs/downloads/`); use `docs/downloads/SHA256SUMS.txt` for that copy.
 
-## What's New in 1.1.3
+## What's New in 1.1.5
 
-**Windows-only update: adds the always-on-top performance overlay and makes the BPM chart a line by default. Android remains at 1.1.1.**
+**Windows-only update: fixes CSV export, fixes the overlay BPM trend and replaces the overlay metric text with a MIDI-style key timeline. Android remains at 1.1.1.**
 
-- **Always-on-top performance overlay** on Windows: live keys, current keys, chord, key/tonality, BPM and the BPM curve, with the same instrument layout as the main window. Drag it by the header, resize it from the corner, hide it with × or the toolbar “Floating window” button.
-- **BPM chart is now a line by default** in both the main window and the overlay. Use the “Line / Bars” switch to restore the histogram at any time.
+- **Floating overlay**: the old current-keys / chord / key / BPM text blocks are removed. The top-right now shows the live BPM trend; the bottom-right is a MIDI-editor-style key timeline showing exactly when each key is pressed and released, with simultaneous keys shown on adjacent lanes. The overlay still switches instruments, drags by the header and resizes from the corner.
+- **BPM trend fix**: the overlay chart now refreshes on every BPM sample; line is the default, with the existing Line/Bars switch.
+- **Export fix**: non-native save dialog, three CSVs always written with headers, a completion dialog and an “Open folder” action.
 - The 1.1.1 key-face UI, clefs, staff lines, instrument palettes, Ukulele chord row, Nightwind Horn two-row layout and the “Key hints” toggle are unchanged.
 - Android remains at **1.1.1**; this release does not rebuild or update the APK.
 
@@ -58,7 +59,7 @@ For every performance, the app shows:
 
 ## 2. Quick Start
 
-1. Run `GenshinInstrumentDetector-1.1.3-win64-setup.exe` and launch the app from the Start Menu/desktop, or double-click the portable exe (the first launch takes about 2–5 s because the single-file build extracts itself).
+1. Run `GenshinInstrumentDetector-1.1.5-win64-setup.exe` and launch the app from the Start Menu/desktop, or double-click the portable exe (the first launch takes about 2–5 s because the single-file build extracts itself).
 2. Choose an **instrument** at the top (Windsong Lyre by default).
 3. The **capture device** is already set to "Speaker output · loopback" — it listens to everything played through the speakers, so in-game performances are captured automatically, **with no extra configuration**.
 4. Click **▶ Start listening**, then play in the game.
@@ -76,7 +77,7 @@ Open the gear button in the top-right corner. All options are in one dialog:
 |---|---|---|
 | Language | 简体中文 / 繁體中文 / 正體中文（臺灣）/ English / 日本語 | Applies after restarting the app; all UI text, analysis results, CSV headers and offline reports use the selected language |
 | Theme | Follow system / Dark / Light | Applies immediately; "Follow system" tracks the Windows dark-mode setting |
-| Window | Show floating window on startup | On by default; opens the always-on-top keys/chord/BPM overlay. It can also be toggled from the toolbar or hidden with its × button |
+| Window | Show floating window on startup | Off by default; opens the always-on-top keys/BPM/timeline overlay. It can also be toggled from the toolbar or hidden with its × button |
 | Updates | Check for updates on startup | Off by default; when enabled, the app checks GitHub Releases at startup. The check only queries GitHub Releases |
 | Updates | Automatically download and install new versions | Off by default; when enabled, the Windows installer is downloaded, SHA-256 verified, then started silently. Android downloads and verifies the APK, then opens the system installer |
 | Updates | Check for updates / Open download page | Manual check; shows current/latest version and opens the release page when a newer version exists |
@@ -236,7 +237,7 @@ powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
 
 The output goes to `dist\`: `原神乐器演奏检测器.exe` (single file), `GenshinInstrumentDetector-<version>-win64-portable.exe`, and `GenshinInstrumentDetector-<version>-win64-setup.exe`.
 
-**Release**: update the version in `app_version.py` (and `android_app/app/build.gradle` only when the APK changes), then push a tag (for example, `git tag v1.1.3 && git push origin v1.1.3`). GitHub Actions builds the Windows and Android packages and creates a Release. Android release builds require the `ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD` repository Secrets; the workflow refuses to publish a debug-signed APK if they are missing. For a Windows-only release, temporarily set the repository variable `WINDOWS_ONLY=1` before pushing the tag; the Android job is skipped and the Release contains only the Windows assets. Remove the variable afterwards.
+**Release**: update the version in `app_version.py` (and `android_app/app/build.gradle` only when the APK changes), then push a tag (for example, `git tag v1.1.5 && git push origin v1.1.5`). GitHub Actions builds the Windows and Android packages and creates a Release. Android release builds require the `ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD` repository Secrets; the workflow refuses to publish a debug-signed APK if they are missing. For a Windows-only release, temporarily set the repository variable `WINDOWS_ONLY=1` before pushing the tag; the Android job is skipped and the Release contains only the Windows assets. Remove the variable afterwards.
 
 ---
 
