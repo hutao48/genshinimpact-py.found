@@ -3,509 +3,357 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Genshin Instrument Detector — see every key, hear every note</title>
-<meta name="description" content="Real-time Genshin Impact instrument detector for Windows and Android: keys, chords, key, per-note duration and BPM, with five UI languages, dark/light themes, an always-on-top overlay and update checks.">
+<title>Genshin Instrument Detector · See the structure inside every performance</title>
+<meta name="description" content="A real-time Genshin Impact instrument detector for Windows. Keys, chords, BPM and a MIDI-style key timeline, on one transparent canvas.">
+<meta name="theme-color" content="#08090b">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Genshin Instrument Detector 1.1.5">
+<meta property="og:description" content="See the keys, the BPM and every press and release. Windows 1.1.5 is available now.">
+<meta property="og:image" content="https://hutao48.github.io/genshinimpact-py.found/assets/overlay.png">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="assets/app.ico">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+<script>document.documentElement.classList.add('js');</script>
 </head>
 <body>
-<header class="nav">
-  <a class="brand" href="#top">
-    <img src="assets/app.ico" alt="" width="28" height="28">
-    <span>Genshin Instrument Detector</span>
+<a class="skip-link" href="#main" data-i18n="skip_link">Skip to content</a>
+
+<header class="nav" id="nav">
+  <a class="brand" href="#top" aria-label="Genshin Instrument Detector">
+    <span class="brand-mark"><img src="assets/app.ico" alt="" width="22" height="22"></span>
+    <span class="brand-copy"><strong>Genshin</strong><span>Instrument Detector</span></span>
   </a>
-  <nav>
+  <nav class="nav-links" aria-label="Primary">
     <a href="#features" data-i18n="nav_features">Features</a>
-    <a href="#downloads" data-i18n="nav_downloads">Downloads</a>
+    <a href="#timeline" data-i18n="nav_timeline">Timeline</a>
+    <a href="#downloads" data-i18n="nav_downloads">Download</a>
     <a href="#security" data-i18n="nav_security">Security</a>
+  </nav>
+  <div class="nav-actions">
     <div class="lang-picker" id="lang-picker">
-      <button type="button" id="lang-button" class="lang-button" aria-haspopup="listbox" aria-expanded="false">
-        <img id="lang-flag" class="lang-flag" src="assets/flags/us.svg" alt="🇺🇸" width="20" height="20">
+      <button type="button" id="lang-button" class="lang-button" aria-haspopup="listbox" aria-expanded="false" data-i18n-aria="lang_label">
+        <img id="lang-flag" class="lang-flag" src="assets/flags/us.svg" alt="🇺🇸" width="18" height="18">
         <span id="lang-label">English</span>
-        <span class="lang-caret" aria-hidden="true">▾</span>
+        <span class="lang-caret" aria-hidden="true">⌄</span>
       </button>
       <div id="lang-menu" class="lang-menu" role="listbox" aria-label="Language">
         <button type="button" class="lang-option" data-lang="zh-CN" role="option" aria-selected="false">
-          <img class="lang-flag" src="assets/flags/cn.svg" alt="🇨🇳" width="20" height="20"><span>简体中文</span>
+          <img class="lang-flag" src="assets/flags/cn.svg" alt="🇨🇳" width="18" height="18"><span>简体中文</span>
         </button>
         <button type="button" class="lang-option" data-lang="zh-Hant" role="option" aria-selected="false">
-          <img class="lang-flag" src="assets/flags/hk.svg" alt="🇭🇰" width="20" height="20"><span>繁體中文（香港）</span>
+          <img class="lang-flag" src="assets/flags/hk.svg" alt="🇭🇰" width="18" height="18"><span>繁體中文（香港）</span>
         </button>
         <button type="button" class="lang-option" data-lang="zh-TW" role="option" aria-selected="false">
-          <img class="lang-flag" src="assets/flags/tw.svg" alt="🇹🇼" width="20" height="20"><span>正體中文（臺灣）</span>
+          <img class="lang-flag" src="assets/flags/tw.svg" alt="🇹🇼" width="18" height="18"><span>正體中文（臺灣）</span>
         </button>
         <button type="button" class="lang-option" data-lang="en" role="option" aria-selected="false">
-          <img class="lang-flag" src="assets/flags/us.svg" alt="🇺🇸" width="20" height="20"><span>English</span>
+          <img class="lang-flag" src="assets/flags/us.svg" alt="🇺🇸" width="18" height="18"><span>English</span>
         </button>
         <button type="button" class="lang-option" data-lang="ja" role="option" aria-selected="false">
-          <img class="lang-flag" src="assets/flags/jp.svg" alt="🇯🇵" width="20" height="20"><span>日本語</span>
+          <img class="lang-flag" src="assets/flags/jp.svg" alt="🇯🇵" width="18" height="18"><span>日本語</span>
         </button>
       </div>
     </div>
-    <a class="gh" href="https://github.com/hutao48/genshinimpact-py.found" target="_blank" rel="noopener">GitHub ↗</a>
-  </nav>
+    <a class="btn btn-sm nav-cta" href="downloads/GenshinInstrumentDetector-1.1.5-win64-setup.exe" download data-i18n="nav_cta">Download 1.1.5</a>
+    <button type="button" id="menu-toggle" class="menu-toggle" aria-expanded="false" aria-controls="mobile-menu" aria-label="Open menu" data-i18n-aria="menu_label">
+      <span></span><span></span>
+    </button>
+  </div>
 </header>
 
-<main id="top">
-  <section class="hero">
-    <div class="hero-copy">
-      <p class="eyebrow" data-i18n="hero_eyebrow">Windows 1.1.5 · Android 1.1.1</p>
-      <h1 data-i18n-html="hero_title">Hear every note.<br><span>See every key.</span></h1>
-      <p class="lede" data-i18n-html="hero_lede">A real-time detector for the six playable instruments in <em>Genshin Impact</em>.
-        It listens to your speakers (or microphone), shows the keys and chords being played,
-        and measures the key, note durations and BPM as you perform.</p>
-      <div class="cta">
-        <a class="btn primary" href="downloads/GenshinInstrumentDetector-1.1.5-win64-setup.exe" download data-i18n="cta_windows">Download for Windows</a>
-        <a class="btn" href="https://github.com/hutao48/genshinimpact-py.found/releases/download/v1.1.1/GenshinInstrumentDetector-1.1.1-android.apk" data-i18n="cta_android">Android APK</a>
+<div id="mobile-menu" class="mobile-menu" aria-hidden="true">
+  <nav class="mobile-nav">
+    <a href="#features" data-i18n="nav_features">Features</a>
+    <a href="#timeline" data-i18n="nav_timeline">Timeline</a>
+    <a href="#downloads" data-i18n="nav_downloads">Download</a>
+    <a href="#security" data-i18n="nav_security">Security</a>
+    <a href="#faq" data-i18n="nav_faq">FAQ</a>
+  </nav>
+  <div class="mobile-foot">
+    <a class="btn btn-primary" href="downloads/GenshinInstrumentDetector-1.1.5-win64-setup.exe" download data-i18n="nav_cta">Download 1.1.5</a>
+    <a href="https://github.com/hutao48/genshinimpact-py.found" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+</div>
+
+<main id="main">
+  <section class="hero" id="top">
+    <div class="hero-grid container">
+      <div class="hero-copy">
+        <p class="eyebrow hero-eyebrow"><span class="live-dot"></span><span data-i18n="hero_eyebrow">Windows 1.1.5 / Android 1.1.1</span></p>
+        <h1 class="hero-title" data-i18n-html="hero_h1">See the structure<br><span class="hero-accent">inside every performance.</span></h1>
+        <p class="hero-sub" data-i18n="hero_sub">Genshin Instrument Detector puts the keys, the BPM and every press and release on one canvas. Not just what you played, but how.</p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="downloads/GenshinInstrumentDetector-1.1.5-win64-setup.exe" download>
+            <span data-i18n="hero_cta">Download for Windows</span><span class="btn-arrow" aria-hidden="true">↗</span>
+          </a>
+          <a class="text-link" href="#timeline" data-i18n="hero_secondary">See what changed</a>
+        </div>
+        <p class="hero-fine" data-i18n-html="hero_fine">Free and local. No telemetry. No account.</p>
+        <div class="hero-stats">
+          <div class="stat"><span class="stat-value">06</span><span class="stat-label" data-i18n="stat_instruments">instruments</span></div>
+          <div class="stat"><span class="stat-value">21</span><span class="stat-label" data-i18n="stat_keys">keys on the lyre</span></div>
+          <div class="stat"><span class="stat-value">0</span><span class="stat-label" data-i18n="stat_telemetry">telemetry</span></div>
+          <div class="stat"><span class="stat-value">1.1.5</span><span class="stat-label" data-i18n="stat_version">Windows release</span></div>
+        </div>
       </div>
-      <p class="fine" data-i18n-html="hero_fine">Free · No telemetry · <a href="https://github.com/hutao48/genshinimpact-py.found" target="_blank" rel="noopener">Open source on GitHub</a></p>
-    </div>
-    <figure class="shot">
-      <img src="assets/hero-dark.png" data-i18n-alt="alt_hero" alt="The detector running with a dark theme, showing the keyboard, live metrics, BPM chart and note-duration table">
-    </figure>
-  </section>
 
-  <section class="features" id="features">
-    <div class="section-head">
-      <p class="eyebrow" data-i18n="features_eyebrow">What it does</p>
-      <h2 data-i18n="features_title">Everything you play, measured.</h2>
-    </div>
-    <div class="grid">
-      <article class="feature">
-        <span class="num">01</span>
-        <h3 data-i18n="f1_title">Six instruments</h3>
-        <p data-i18n="f1_text">Windsong Lyre, Floral Zither, Vintage Lyre, Harmonic Keys, Nightwind Horn and Ukulele — with the correct 21/14/12-key layouts.</p>
-      </article>
-      <article class="feature">
-        <span class="num">02</span>
-        <h3 data-i18n="f2_title">Notes, chords, key</h3>
-        <p data-i18n="f2_text">Highlights the keys currently held, names the chord (C, Dm, Em, F, G, Am, G7 …) and estimates the key with a confidence value.</p>
-      </article>
-      <article class="feature">
-        <span class="num">03</span>
-        <h3 data-i18n="f3_title">Millisecond durations</h3>
-        <p data-i18n="f3_text">Every note gets an onset-aligned start time, duration, gap and end reason (key release/cutoff, same-key re-press or natural decay).</p>
-      </article>
-      <article class="feature">
-        <span class="num">04</span>
-        <h3 data-i18n="f4_title">BPM that follows you</h3>
-        <p data-i18n="f4_text">A BPM line by default (switchable to bars) with auto-scaling axis, 30 s / 1 min / 5 min / all ranges, hover readouts and a floating always-on-top view.</p>
-      </article>
-      <article class="feature">
-        <span class="num">05</span>
-        <h3 data-i18n="f5_title">Boundary check</h3>
-        <p data-i18n="f5_text">Flags evidence of operations beyond human limits: more than 10 keys at once, or a very long run of perfectly even gaps.</p>
-      </article>
-      <article class="feature">
-        <span class="num">06</span>
-        <h3 data-i18n="f6_title">Offline analysis</h3>
-        <p data-i18n="f6_text">Analyze a WAV recording from the command line and get the full report, including per-second BPM readings.</p>
-      </article>
-    </div>
-  </section>
-
-  <section class="split">
-    <div class="split-copy">
-      <p class="eyebrow" data-i18n="new_eyebrow">New in 1.1.5 · Windows</p>
-      <h2 data-i18n="new_title">Your performance, always in view.</h2>
-      <p data-i18n="new_text">A fully transparent, frameless always-on-top overlay now puts the live BPM trend at the top right and a MIDI-style key timeline at the bottom right. Bars show each key from press to release; simultaneous keys line up across lanes. The overlay is off by default; open it from the toolbar “Floating window” button. Switch instruments from the dropdown, drag the header and resize from the corner.</p>
-      <ul class="checks">
-        <li data-i18n="new_li1">Live BPM trend at the top right</li>
-        <li data-i18n="new_li2">MIDI-style press/release timeline with simultaneous keys</li>
-        <li data-i18n="new_li3">Switch instruments, drag and resize without losing the overlay</li>
-        <li data-i18n="new_li4">Export fix and Windows-only update; Android stays 1.1.1</li>
-      </ul>
-    </div>
-    <figure class="shot small">
-      <img src="assets/overlay.png" data-i18n-alt="alt_overlay" alt="The transparent floating overlay with keys, BPM trend and MIDI-style key timeline">
-    </figure>
-  </section>
-
-  <section class="showcase">
-    <figure class="shot"><img src="assets/hero-dark.png" data-i18n-alt="alt_showcase1" alt="The detector with the redesigned keyboard and a dark theme"></figure>
-    <figure class="shot"><img src="assets/hero-ja.png" data-i18n-alt="alt_showcase2" alt="The detector with the Japanese interface"></figure>
-  </section>
-
-  <section class="downloads" id="downloads">
-    <div class="section-head">
-      <p class="eyebrow" data-i18n="download_eyebrow">Get the app</p>
-      <h2 data-i18n="download_title">Download</h2>
-      <p class="sub" data-i18n="download_sub">The Windows installer is hosted directly on this site. The portable build and Android APK come from GitHub Releases.</p>
-    </div>
-    <div class="grid two">
-      <article class="card">
-        <div class="card-head">
-          <h3 data-i18n="windows_title">Windows</h3>
-          <span class="badge">1.1.5</span>
+      <div class="hero-canvas">
+        <div class="canvas-bar">
+          <span class="win-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="mono" data-i18n="stage_canvas">CANVAS / 01</span>
+          <span class="canvas-bar-spacer"></span>
+          <span class="mono canvas-live"><i></i><span data-i18n="stage_live">OVERLAY / LIVE</span></span>
         </div>
-        <p data-i18n="windows_desc">Windows 10/11, 64-bit. The installer is per-user and needs no administrator rights.</p>
-        <a class="dl" href="downloads/GenshinInstrumentDetector-1.1.5-win64-setup.exe" download>
-          <span data-i18n="windows_installer">Installer · hosted here</span><code>GenshinInstrumentDetector-1.1.5-win64-setup.exe</code>
-        </a>
-        <a class="dl" href="https://github.com/hutao48/genshinimpact-py.found/releases/download/v1.1.5/GenshinInstrumentDetector-1.1.5-win64-portable.exe">
-          <span data-i18n="windows_portable">Portable</span><code>GenshinInstrumentDetector-1.1.5-win64-portable.exe</code>
-        </a>
-        <p class="meta" data-i18n="windows_meta">The exe is unsigned; SmartScreen may ask you to choose “More info → Run anyway”.</p>
-      </article>
-      <article class="card">
-        <div class="card-head">
-          <h3 data-i18n="android_title">Android</h3>
-          <span class="badge">1.1.1</span>
+
+        <div class="stage" id="stage" aria-label="Automatic canvas build preview">
+          <img class="stage-ghost" src="assets/overlay.png" alt="" aria-hidden="true">
+          <div class="stage-grid" aria-hidden="true"></div>
+          <div class="stage-blueprint" aria-hidden="true">
+            <div class="bp bp-keys" data-bp="keys"><span class="bp-tag">01</span><span data-i18n="stage_keys">Keys</span></div>
+            <div class="bp bp-bpm" data-bp="bpm"><span class="bp-tag">02</span><span data-i18n="stage_bpm">BPM trend</span></div>
+            <div class="bp bp-timeline" data-bp="timeline"><span class="bp-tag">03</span><span data-i18n="stage_timeline">Key timeline</span></div>
+          </div>
+          <div class="stage-reveals" id="stage-reveals"></div>
+          <div class="stage-marquee" id="stage-marquee" aria-hidden="true"><span id="stage-marquee-label"></span></div>
+          <div class="stage-cursor" id="stage-cursor" aria-hidden="true">
+            <svg viewBox="0 0 20 24" width="20" height="24"><path d="M2 2l15 9-7 2-3 7z" fill="#d8ff58" stroke="#08090b" stroke-width="1.5"/></svg>
+          </div>
+          <div class="stage-hint"><span class="mono" data-i18n="stage_auto">AUTO BUILD</span><span data-i18n="stage_hint">Scroll. The canvas builds itself.</span></div>
+          <div class="stage-meter"><span class="mono stage-status" id="stage-status" aria-live="polite">Assembling 0 / 3</span><span class="stage-ready" id="stage-ready" data-i18n="stage_ready">Canvas ready</span></div>
         </div>
-        <p data-i18n="android_desc">Android 7.0 and newer. Includes the built-in update check and a fixed release signature since 1.1.0.</p>
-        <a class="dl" href="https://github.com/hutao48/genshinimpact-py.found/releases/download/v1.1.1/GenshinInstrumentDetector-1.1.1-android.apk">
-          <span data-i18n="android_apk">APK</span><code>GenshinInstrumentDetector-1.1.1-android.apk</code>
-        </a>
-        <p class="meta" data-i18n="android_meta">Fixed signing since 1.1.0; future versions can install over it. Upgrading from 1.0.x (debug-signed) needs one uninstall first.</p>
-      </article>
+
+        <div class="canvas-foot">
+          <span class="mono">920 × 520</span>
+          <span class="mono">100%</span>
+          <span class="mono canvas-mode" data-i18n="canvas_mode">AUTO / 3 LAYERS</span>
+        </div>
+      </div>
     </div>
-    <p class="download-links">
-      <a href="downloads/SHA256SUMS.txt" data-i18n="checksums">SHA-256 checksums</a>
-      <span>·</span>
-      <a href="https://github.com/hutao48/genshinimpact-py.found/releases/tag/v1.1.5" data-i18n="release_notes">Release notes</a>
-      <span>·</span>
-      <a href="https://github.com/hutao48/genshinimpact-py.found/releases/latest" data-i18n="all_releases">All releases</a>
-    </p>
+    <a class="scroll-cue" href="#statement"><span data-i18n="hero_scroll">Scroll to build</span><span class="scroll-line" aria-hidden="true"></span></a>
   </section>
 
-  <section class="security" id="security">
-    <div class="section-head">
-      <p class="eyebrow" data-i18n="security_eyebrow">Privacy &amp; security</p>
-      <h2 data-i18n="security_title">Local by default.</h2>
+  <section class="proof" aria-label="At a glance">
+    <div class="proof-grid container">
+      <div class="proof-item"><span class="proof-index mono">01</span><span class="proof-main" data-i18n="proof_1">Six playable instruments</span></div>
+      <div class="proof-item"><span class="proof-index mono">02</span><span class="proof-main" data-i18n="proof_2">Millisecond note timing</span></div>
+      <div class="proof-item"><span class="proof-index mono">03</span><span class="proof-main" data-i18n="proof_3">BPM line and key timeline</span></div>
+      <div class="proof-item"><span class="proof-index mono">04</span><span class="proof-main" data-i18n="proof_4">No account. No telemetry.</span></div>
     </div>
-    <div class="grid">
-      <article class="feature">
-        <span class="num">A</span>
-        <h3 data-i18n="s1_title">No telemetry</h3>
-        <p data-i18n="s1_text">Audio never leaves your computer. There is no analytics, account or cloud processing.</p>
-      </article>
-      <article class="feature">
-        <span class="num">B</span>
-        <h3 data-i18n="s2_title">Bounded update check</h3>
-        <p data-i18n="s2_text">An optional HTTPS query to GitHub Releases with a 12 s timeout, a 512 KB metadata cap and a 200 MB installer cap.</p>
-      </article>
-      <article class="feature">
-        <span class="num">C</span>
-        <h3 data-i18n="s3_title">Verified installs</h3>
-        <p data-i18n="s3_text">Automatic updates download only from the repository release, verify the published SHA-256 and PE header, then run the installer. Off by default.</p>
-      </article>
-      <article class="feature">
-        <span class="num">D</span>
-        <h3 data-i18n="s4_title">Fixed Android signing</h3>
-        <p data-i18n="s4_text">From 1.1.0 every APK uses the same release certificate, so newer versions install over older ones. The in-app check downloads and verifies the APK.</p>
-      </article>
+  </section>
+
+  <section class="statement section" id="statement" data-build="statement" data-target="#statement-text">
+    <div class="container statement-grid">
+      <div class="section-rail"><span class="mono">01</span><span class="mono" data-i18n="rail_idea">THE IDEA</span></div>
+      <div class="statement-copy">
+        <h2 class="statement-text" id="statement-text">Not a guess at what you played.<br>A record of how you played it.</h2>
+        <p class="statement-note" data-i18n="statement_note">Every key, every gap, every tempo change. On one quiet canvas.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="features section" id="features" data-build="features" data-target=".section-head">
+    <div class="container">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow" data-i18n="features_eyebrow">THREE VIEWS</p>
+          <h2 data-i18n-html="features_title">One performance.<br>Three ways to see it.</h2>
+        </div>
+        <p class="section-lede" data-i18n="features_sub">The notes are only half of it. See what your hands did, how the tempo moved, and exactly where each key started and stopped.</p>
+      </div>
+
+      <div class="feature-grid" id="features-grid">
+        <article class="feature-card">
+          <div class="feature-top"><span class="mono">01</span><span class="mono card-tag" data-i18n="card1_tag">LIVE KEYS</span></div>
+          <div class="feature-visual visual-keys" aria-hidden="true">
+            <div class="mini-keyboard">
+              <i class="on">Q</i><i>W</i><i>E</i><i>R</i><i>T</i><i>Y</i><i>U</i>
+              <i>A</i><i class="on">S</i><i>D</i><i>F</i><i>G</i><i>H</i><i>J</i>
+              <i>Z</i><i>X</i><i>C</i><i>V</i><i>B</i><i>N</i><i>M</i>
+            </div>
+            <span class="visual-caption mono">C MAJOR / 2 HELD</span>
+          </div>
+          <h3 data-i18n="card1_title">Every key you hold</h3>
+          <p data-i18n="card1_text">The keyboard lights up in real time, including Ukulele chords and the two-row Nightwind Horn layout.</p>
+        </article>
+
+        <article class="feature-card">
+          <div class="feature-top"><span class="mono">02</span><span class="mono card-tag" data-i18n="card2_tag">BPM</span></div>
+          <div class="feature-visual visual-bpm" aria-hidden="true">
+            <svg viewBox="0 0 320 150" role="presentation">
+              <path class="chart-grid" d="M0 25H320M0 75H320M0 125H320"/>
+              <path class="chart-line" d="M0 95 C30 92 38 50 64 54 S98 122 128 114 154 64 178 58 214 98 238 106 270 40 300 46 312 76 320 72"/>
+              <circle class="chart-dot" cx="300" cy="46" r="4"/>
+              <path class="chart-dash" d="M0 72H320"/>
+            </svg>
+            <span class="visual-caption mono">128.4 BPM</span>
+          </div>
+          <h3 data-i18n="card2_title">The shape of the tempo</h3>
+          <p data-i18n="card2_text">A live BPM line with auto-scaling ranges and current, average, low and high readouts.</p>
+        </article>
+
+        <article class="feature-card">
+          <div class="feature-top"><span class="mono">03</span><span class="mono card-tag" data-i18n="card3_tag">TIMELINE</span></div>
+          <div class="feature-visual visual-roll" aria-hidden="true">
+            <div class="roll-lines"></div>
+            <div class="roll-bar r1"></div><div class="roll-bar r2"></div><div class="roll-bar r3"></div><div class="roll-bar r4"></div>
+            <span class="visual-caption mono">PRESS → RELEASE</span>
+          </div>
+          <h3 data-i18n="card3_title">The space between notes</h3>
+          <p data-i18n="card3_text">Onset, duration, gap and end reason for every note, down to the millisecond.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="timeline-section section" id="timeline" data-build="timeline" data-target="#timeline-panel">
+    <div class="container">
+      <div class="timeline-panel" id="timeline-panel">
+        <div class="timeline-copy">
+          <p class="eyebrow" data-i18n="timeline_eyebrow">KEY TIMELINE / 1.1.5</p>
+          <h2 data-i18n="timeline_title">See how a chord is actually played.</h2>
+          <p class="section-lede" data-i18n="timeline_text">A MIDI-editor style timeline. Each bar is a key held down; overlapping lanes are notes played together. Press, release, and everything in between.</p>
+          <ul class="check-list">
+            <li data-i18n="timeline_li1">Millisecond press and release positions</li>
+            <li data-i18n="timeline_li2">Simultaneous keys line up across lanes</li>
+            <li data-i18n="timeline_li3">Ukulele chords and two-row horn layouts stay intact</li>
+          </ul>
+          <p class="small-note" data-i18n="timeline_note">The floating overlay is off by default. Open it from the toolbar whenever you want it.</p>
+        </div>
+        <div class="timeline-visual">
+          <div class="roll-head">
+            <span class="mono">KEY / NOTE</span><span class="mono">00:00</span><span class="mono">00:08</span><span class="mono">00:16</span>
+          </div>
+          <div class="roll">
+            <div class="roll-lane"><span class="mono">Q C5</span><div class="lane-track"><i style="--start:4%;--len:16%"></i></div></div>
+            <div class="roll-lane"><span class="mono">A C4</span><div class="lane-track"><i style="--start:5%;--len:15%"></i><i style="--start:49%;--len:13%"></i></div></div>
+            <div class="roll-lane"><span class="mono">S D4</span><div class="lane-track"><i style="--start:57%;--len:18%"></i></div></div>
+            <div class="roll-lane"><span class="mono">D E4</span><div class="lane-track"><i style="--start:6%;--len:14%"></i><i style="--start:58%;--len:17%"></i></div></div>
+            <div class="roll-lane"><span class="mono">F F4</span><div class="lane-track"><i style="--start:30%;--len:12%"></i></div></div>
+            <div class="roll-lane"><span class="mono">G G4</span><div class="lane-track"><i style="--start:32%;--len:11%"></i></div></div>
+            <div class="roll-lane"><span class="mono">H A4</span><div class="lane-track"><i style="--start:78%;--len:10%"></i></div></div>
+            <div class="roll-lane"><span class="mono">J B4</span><div class="lane-track"><i style="--start:79%;--len:9%"></i></div></div>
+          </div>
+          <div class="roll-foot"><span class="mono">8 LANES</span><span class="mono">HOLD ANY KEY TO SEE IT HERE</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="downloads section" id="downloads" data-build="downloads" data-target=".section-head">
+    <div class="container">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow" data-i18n="download_eyebrow">GET THE APP</p>
+          <h2 data-i18n="download_title">Put the next performance on the canvas.</h2>
+        </div>
+        <p class="section-lede" data-i18n="download_sub">Windows 1.1.5 is ready. The installer is per-user and needs no administrator rights.</p>
+      </div>
+
+      <div class="download-grid" id="download-grid">
+        <article class="download-card windows-card">
+          <div class="download-head"><span class="platform">Windows</span><span class="version mono">1.1.5</span></div>
+          <p class="download-desc" data-i18n="win_desc">Windows 10 or 11, 64-bit. Start the installer and open the app from the Start Menu.</p>
+          <a class="btn btn-primary download-main" href="downloads/GenshinInstrumentDetector-1.1.5-win64-setup.exe" download>
+            <span data-i18n="win_cta">Download installer</span><span class="btn-arrow" aria-hidden="true">↓</span>
+          </a>
+          <a class="file-link" href="https://github.com/hutao48/genshinimpact-py.found/releases/download/v1.1.5/GenshinInstrumentDetector-1.1.5-win64-portable.exe">
+            <span data-i18n="win_portable">Portable build</span><code>GenshinInstrumentDetector-1.1.5-win64-portable.exe</code>
+          </a>
+          <p class="download-note" data-i18n="win_note">Unsigned exe. SmartScreen may ask you to choose “More info → Run anyway”.</p>
+        </article>
+
+        <article class="download-card android-card">
+          <div class="download-head"><span class="platform">Android</span><span class="version mono">1.1.1</span></div>
+          <p class="download-desc" data-i18n="android_desc">Android 7.0 and newer. The mobile detector stays on 1.1.1.</p>
+          <a class="btn btn-ghost download-main" href="https://github.com/hutao48/genshinimpact-py.found/releases/download/v1.1.1/GenshinInstrumentDetector-1.1.1-android.apk">
+            <span data-i18n="android_cta">Get Android 1.1.1</span><span class="btn-arrow" aria-hidden="true">↗</span>
+          </a>
+          <p class="download-note" data-i18n="android_note">Unchanged in 1.1.5. Fixed signing since 1.1.0.</p>
+        </article>
+      </div>
+
+      <div class="download-meta">
+        <a href="downloads/SHA256SUMS.txt" data-i18n="checksum">SHA-256 checksums</a>
+        <span class="meta-dot">·</span>
+        <a href="https://github.com/hutao48/genshinimpact-py.found/releases/tag/v1.1.5" data-i18n="release_notes">Release notes</a>
+        <span class="meta-dot">·</span>
+        <a href="https://github.com/hutao48/genshinimpact-py.found/releases" data-i18n="all_releases">All releases</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="security section" id="security">
+    <div class="container">
+      <div class="security-head">
+        <p class="eyebrow" data-i18n="security_eyebrow">PRIVACY / SECURITY</p>
+        <h2 data-i18n="security_title">Local by default.</h2>
+      </div>
+      <div class="security-grid">
+        <article class="security-item"><span class="mono security-number">A</span><h3 data-i18n="sec1_title">No telemetry</h3><p data-i18n="sec1_text">Audio never leaves your computer. No analytics, account or cloud processing.</p></article>
+        <article class="security-item"><span class="mono security-number">B</span><h3 data-i18n="sec2_title">Bounded update check</h3><p data-i18n="sec2_text">An optional HTTPS query to GitHub Releases, with a 12 second timeout and hard size limits.</p></article>
+        <article class="security-item"><span class="mono security-number">C</span><h3 data-i18n="sec3_title">Verified installs</h3><p data-i18n="sec3_text">Automatic updates verify the published SHA-256 and the PE header before running the installer.</p></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="faq section" id="faq">
+    <div class="container faq-grid">
+      <div class="faq-intro">
+        <p class="eyebrow" data-i18n="faq_eyebrow">QUESTIONS</p>
+        <h2 data-i18n-html="faq_title">A few things<br>before you download.</h2>
+      </div>
+      <div class="faq-list">
+        <details class="faq-item"><summary><span data-i18n="faq1_q">Does the overlay open automatically?</span><span class="faq-plus" aria-hidden="true"></span></summary><p data-i18n="faq1_a">No. It is off by default. Use the toolbar button or enable it in Settings; your choice is remembered.</p></details>
+        <details class="faq-item"><summary><span data-i18n="faq2_q">What changed in 1.1.5?</span><span class="faq-plus" aria-hidden="true"></span></summary><p data-i18n="faq2_a">Export is fixed, the overlay BPM trend refreshes, and the old metric text is replaced by a MIDI-style key timeline.</p></details>
+        <details class="faq-item"><summary><span data-i18n="faq3_q">Will Android be updated?</span><span class="faq-plus" aria-hidden="true"></span></summary><p data-i18n="faq3_a">No. Android stays at 1.1.1; the 1.1.5 release is Windows only.</p></details>
+        <details class="faq-item"><summary><span data-i18n="faq4_q">What does Export write?</span><span class="faq-plus" aria-hidden="true"></span></summary><p data-i18n="faq4_a">Three UTF-8 CSV files: note durations, BPM history, and boundary checks. A completion dialog can open the folder.</p></details>
+        <details class="faq-item"><summary><span data-i18n="faq5_q">Which instruments are supported?</span><span class="faq-plus" aria-hidden="true"></span></summary><p data-i18n="faq5_a">Windsong Lyre, Floral Zither, Vintage Lyre, Harmonic Keys, Nightwind Horn and Ukulele, with the correct key layouts.</p></details>
+        <details class="faq-item"><summary><span data-i18n="faq6_q">Does it need an internet connection?</span><span class="faq-plus" aria-hidden="true"></span></summary><p data-i18n="faq6_a">No. Detection and export are local. Only the optional update check contacts GitHub.</p></details>
+      </div>
+    </div>
+  </section>
+
+  <section class="final-section">
+    <div class="container final-inner">
+      <p class="eyebrow" data-i18n="final_eyebrow">ONE LAST THING</p>
+      <h2 data-i18n="final_title">Hear it. See it.<br>Keep it.</h2>
+      <a class="btn btn-primary btn-large" href="downloads/GenshinInstrumentDetector-1.1.5-win64-setup.exe" download>
+        <span data-i18n="final_cta">Download for Windows 1.1.5</span><span class="btn-arrow" aria-hidden="true">↗</span>
+      </a>
+      <p class="final-note" data-i18n="final_note">Windows 1.1.5 · Android 1.1.1 · Local by default</p>
     </div>
   </section>
 </main>
 
-<footer>
-  <div>
-    <strong>Genshin Instrument Detector</strong>
-    <p data-i18n="footer_tagline">Independent fan tool. Not affiliated with HoYoverse. Genshin Impact is a trademark of HoYoverse.</p>
-  </div>
-  <div class="footer-links">
-    <a href="https://github.com/hutao48/genshinimpact-py.found">GitHub</a>
-    <a href="https://github.com/hutao48/genshinimpact-py.found/releases" data-i18n="all_releases">All releases</a>
-    <a href="https://github.com/hutao48/genshinimpact-py.found/blob/main/SECURITY.md" data-i18n="nav_security">Security</a>
-    <a href="https://github.com/hutao48/genshinimpact-py.found/blob/main/使用说明.md" data-i18n="footer_guide">中文使用说明</a>
+<footer class="footer">
+  <div class="container footer-grid">
+    <div class="footer-brand">
+      <span class="brand-mark"><img src="assets/app.ico" alt="" width="20" height="20"></span>
+      <strong>Genshin Instrument Detector</strong>
+      <p data-i18n="footer_tagline">Independent fan tool. Not affiliated with HoYoverse.</p>
+    </div>
+    <div class="footer-links">
+      <a href="https://github.com/hutao48/genshinimpact-py.found" target="_blank" rel="noopener">GitHub ↗</a>
+      <a href="https://github.com/hutao48/genshinimpact-py.found/releases" data-i18n="all_releases">All releases</a>
+      <a href="https://github.com/hutao48/genshinimpact-py.found/blob/main/SECURITY.md" data-i18n="nav_security">Security</a>
+      <a href="https://github.com/hutao48/genshinimpact-py.found/blob/main/使用说明.md" data-i18n="footer_guide">中文使用说明</a>
+    </div>
   </div>
 </footer>
 
-<script>
-const I18N = {
-  en: {
-    nav_features: "Features", nav_downloads: "Downloads", nav_security: "Security",
-    hero_eyebrow: "Windows 1.1.5 · Android 1.1.1",
-    hero_title: "Hear every note.<br><span>See every key.</span>",
-    hero_lede: "A real-time detector for the six playable instruments in <em>Genshin Impact</em>. It listens to your speakers (or microphone), shows the keys and chords being played, and measures the key, note durations and BPM as you perform.",
-    cta_windows: "Download for Windows", cta_android: "Android APK",
-    hero_fine: 'Free · No telemetry · <a href="https://github.com/hutao48/genshinimpact-py.found" target="_blank" rel="noopener">Open source on GitHub</a>',
-    features_eyebrow: "What it does", features_title: "Everything you play, measured.",
-    f1_title: "Six instruments", f1_text: "Windsong Lyre, Floral Zither, Vintage Lyre, Harmonic Keys, Nightwind Horn and Ukulele — with the correct 21/14/12-key layouts.",
-    f2_title: "Notes, chords, key", f2_text: "Highlights the keys currently held, names the chord (C, Dm, Em, F, G, Am, G7 …) and estimates the key with a confidence value.",
-    f3_title: "Millisecond durations", f3_text: "Every note gets an onset-aligned start time, duration, gap and end reason (key release/cutoff, same-key re-press or natural decay).",
-    f4_title: "BPM that follows you", f4_text: "A BPM line by default (switchable to bars) with auto-scaling axis, 30 s / 1 min / 5 min / all ranges, hover readouts and a floating always-on-top view.",
-    f5_title: "Boundary check", f5_text: "Flags evidence of operations beyond human limits: more than 10 keys at once, or a very long run of perfectly even gaps.",
-    f6_title: "Offline analysis", f6_text: "Analyze a WAV recording from the command line and get the full report, including per-second BPM readings.",
-    new_eyebrow: "New in 1.1.5 · Windows", new_title: "Your performance, always in view.",
-    new_text: "A fully transparent, frameless always-on-top overlay now puts the live BPM trend at the top right and a MIDI-style key timeline at the bottom right. Bars show each key from press to release; simultaneous keys line up across lanes. The overlay is off by default; open it from the toolbar “Floating window” button. Switch instruments from the dropdown, drag the header and resize from the corner.",
-    new_li1: "Live BPM trend at the top right",
-    new_li2: "MIDI-style press/release timeline with simultaneous keys",
-    new_li3: "Switch instruments, drag and resize without losing the overlay",
-    new_li4: "Export fix and Windows-only update; Android stays 1.1.1",
-    alt_hero: "The detector running with a dark theme, showing the keyboard, live metrics, BPM chart and note-duration table",
-    alt_overlay: "The transparent floating overlay with keys, BPM trend and MIDI-style key timeline",
-    alt_showcase1: "The detector with the redesigned keyboard and a dark theme",
-    alt_showcase2: "The detector with the Japanese interface",
-    download_eyebrow: "Get the app", download_title: "Download",
-    download_sub: "The Windows installer is hosted directly on this site. The portable build and Android APK come from GitHub Releases.",
-    windows_title: "Windows", windows_desc: "Windows 10/11, 64-bit. The installer is per-user and needs no administrator rights.",
-    windows_installer: "Installer · hosted here", windows_portable: "Portable",
-    windows_meta: "The exe is unsigned; SmartScreen may ask you to choose “More info → Run anyway”.",
-    android_title: "Android", android_desc: "Android 7.0 and newer. Includes the built-in update check and a fixed release signature since 1.1.0.",
-    android_apk: "APK", android_meta: "Fixed signing since 1.1.0; future versions can install over it. Upgrading from 1.0.x (debug-signed) needs one uninstall first.",
-    checksums: "SHA-256 checksums", release_notes: "Release notes", all_releases: "All releases",
-    security_eyebrow: "Privacy & security", security_title: "Local by default.",
-    s1_title: "No telemetry", s1_text: "Audio never leaves your computer. There is no analytics, account or cloud processing.",
-    s2_title: "Bounded update check", s2_text: "An optional HTTPS query to GitHub Releases with a 12 s timeout, a 512 KB metadata cap and a 200 MB installer cap.",
-    s3_title: "Verified installs", s3_text: "Automatic updates download only from the repository release, verify the published SHA-256 and PE header, then run the installer. Off by default.",
-    s4_title: "Fixed Android signing", s4_text: "From 1.1.0 every APK uses the same release certificate, so newer versions install over older ones. The in-app check downloads and verifies the APK.",
-    footer_tagline: "Independent fan tool. Not affiliated with HoYoverse. Genshin Impact is a trademark of HoYoverse.",
-    footer_guide: "中文使用说明",
-    meta_title: "Genshin Instrument Detector — see every key, hear every note",
-    meta_desc: "Real-time Genshin Impact instrument detector for Windows and Android: keys, chords, key, per-note duration and BPM, with five UI languages, dark/light themes, an always-on-top overlay and update checks."
-  },
-  "zh-CN": {
-    nav_features: "功能", nav_downloads: "下载", nav_security: "安全",
-    hero_eyebrow: "Windows 1.1.5 · Android 1.1.1",
-    hero_title: "听见音符。<br><span>看见琴键。</span>",
-    hero_lede: "实时识别《原神》六种可演奏乐器的检测工具。监听扬声器（或麦克风）输出，显示当前琴键与和弦，并测量调性、每个音的时长和 BPM。",
-    cta_windows: "下载 Windows 版", cta_android: "Android APK",
-    hero_fine: '免费 · 无遥测 · <a href="https://github.com/hutao48/genshinimpact-py.found" target="_blank" rel="noopener">GitHub 开源</a>',
-    features_eyebrow: "它能做什么", features_title: "你演奏的一切，都被测量。",
-    f1_title: "六种乐器", f1_text: "风物之诗琴、镜花之琴、跃律琴、谐律键琴、晚风圆号、悠可琴——分别还原 21/14/12 键布局。",
-    f2_title: "音符、和弦、调性", f2_text: "高亮当前按下的琴键，识别和弦（C、Dm、Em、F、G、Am、G7…），并给出调性与置信度。",
-    f3_title: "毫秒级时长", f3_text: "每个音都有对齐起音的开始时间、时长、间隔和结束方式（松键/截止、同键重按或自然衰减）。",
-    f4_title: "跟随演奏的 BPM", f4_text: "默认显示 BPM 折线（可切换直方图），纵轴自动缩放，支持 30 秒 / 1 分钟 / 5 分钟 / 全部范围、悬停读数和置顶悬浮窗。",
-    f5_title: "边界值排查", f5_text: "标记超出手手极限的操作证据：同时超过 10 个键，或很长一段完全一致的间隔。",
-    f6_title: "离线分析", f6_text: "从命令行分析 WAV 录音并生成完整报告，包括每秒 BPM 读数。",
-    new_eyebrow: "1.1.5 新增 · Windows", new_title: "演奏数据，始终在视野内。",
-    new_text: "全透明、无边框的置顶悬浮窗：右上是实时 BPM 走向，右下是 MIDI 编辑器风格的按键时间线。横条显示每个键从按下到抬起，相邻轨道可看出同时按下的键。悬浮窗默认关闭，可从顶栏「悬浮窗」按钮开启；仍可在悬浮窗内切换乐器、拖动标题栏移动、右下角缩放。",
-    new_li1: "右上：实时 BPM 走向",
-    new_li2: "右下：按下/抬起时间线，同时按键清晰可见",
-    new_li3: "可切换乐器、拖动和缩放，功能不丢失",
-    new_li4: "修复导出与悬浮窗 BPM 刷新；仅更新 Windows，Android 保持 1.1.1",
-    alt_hero: "深色主题下的检测器，显示琴键、实时指标、BPM 图和音符时长表",
-    alt_overlay: "全透明置顶悬浮窗，显示琴键、BPM 走向和 MIDI 风格按键时间线",
-    alt_showcase1: "重新设计琴键后的深色主题界面",
-    alt_showcase2: "日语界面的检测器",
-    download_eyebrow: "获取应用", download_title: "下载",
-    download_sub: "Windows 安装包直接托管在本站；便携版与 Android APK 来自 GitHub Releases。",
-    windows_title: "Windows", windows_desc: "Windows 10/11 64 位；安装到当前用户，无需管理员权限。",
-    windows_installer: "安装程序 · 本站托管", windows_portable: "免安装版",
-    windows_meta: "exe 未做代码签名，SmartScreen 可能提示；选择“更多信息 → 仍要运行”即可。",
-    android_title: "Android", android_desc: "Android 7.0 及以上；包含内置更新检查，1.1.0 起使用固定发布签名。",
-    android_apk: "APK", android_meta: "1.1.0 起固定签名，后续版本可直接覆盖；1.0.x 调试签名用户需先卸载一次。",
-    checksums: "SHA-256 校验和", release_notes: "更新说明", all_releases: "全部版本",
-    security_eyebrow: "隐私与安全", security_title: "默认本地运行。",
-    s1_title: "无遥测", s1_text: "音频不会离开你的电脑；没有统计、账号或云端处理。",
-    s2_title: "受限的更新检查", s2_text: "可选的 GitHub Releases HTTPS 查询，12 秒超时、512 KB 元数据上限、200 MB 安装包上限。",
-    s3_title: "校验后安装", s3_text: "自动更新只从仓库 Release 下载，校验 SHA-256 与 PE 头后才运行安装程序；默认关闭。",
-    s4_title: "Android 固定签名", s4_text: "1.1.0 起所有 APK 使用同一发布证书，新版本可直接覆盖旧版；应用内检查会下载并校验 APK。",
-    footer_tagline: "独立同人工具，与 HoYoverse 无关联；Genshin Impact 是 HoYoverse 的商标。",
-    footer_guide: "中文使用说明",
-    meta_title: "原神乐器演奏检测器 — 看见每一个琴键",
-    meta_desc: "Windows / Android 实时原神乐器检测：琴键、和弦、调性、音符时长与 BPM；五种界面语言、深/浅主题、置顶悬浮窗和更新检查。"
-  },
-  "zh-Hant": {
-    nav_features: "功能", nav_downloads: "下載", nav_security: "安全",
-    hero_eyebrow: "Windows 1.1.5 · Android 1.1.1",
-    hero_title: "聽見音符。<br><span>看見琴鍵。</span>",
-    hero_lede: "即時辨識《原神》六種可演奏樂器的檢測工具。監聽揚聲器（或麥克風）輸出，顯示目前琴鍵與和弦，並測量調性、每個音的時長和 BPM。",
-    cta_windows: "下載 Windows 版", cta_android: "Android APK",
-    hero_fine: '免費 · 無遙測 · <a href="https://github.com/hutao48/genshinimpact-py.found" target="_blank" rel="noopener">GitHub 開源</a>',
-    features_eyebrow: "它能做什麼", features_title: "你演奏的一切，都被測量。",
-    f1_title: "六種樂器", f1_text: "風物之詩琴、鏡花之琴、躍律琴、諧律鍵琴、晚風圓號、悠可琴——分別還原 21/14/12 鍵佈局。",
-    f2_title: "音符、和弦、調性", f2_text: "高亮目前按下的琴鍵，辨識和弦（C、Dm、Em、F、G、Am、G7…），並给出調性與置信度。",
-    f3_title: "毫秒級時長", f3_text: "每個音都有對齊起音的開始時間、時長、間隔和結束方式（放鍵/截止、同鍵重按或自然衰減）。",
-    f4_title: "跟隨演奏的 BPM", f4_text: "預設顯示 BPM 折線（可切換直方圖），縱軸自動縮放，支援 30 秒 / 1 分鐘 / 5 分鐘 / 全部範圍、懸停讀數和置頂懸浮窗。",
-    f5_title: "邊界值排查", f5_text: "標記超出手手極限的操作證據：同時超過 10 個鍵，或很長一段完全一致的間隔。",
-    f6_title: "離線分析", f6_text: "從命令列分析 WAV 錄音並產生完整報告，包括每秒 BPM 讀數。",
-    new_eyebrow: "1.1.5 新增 · Windows", new_title: "演奏資料，始終在視野內。",
-    new_text: "全透明、無邊框的置頂懸浮窗：右上是即時 BPM 走向，右下是 MIDI 編輯器風格的按鍵時間線。橫條顯示每個鍵從按下到抬起，相鄰軌道可看出同時按下的鍵。懸浮窗預設關閉，可從頂欄「懸浮窗」按鈕開啟；仍可在懸浮窗內切換樂器、拖動標題列移動、右下角縮放。",
-    new_li1: "右上：即時 BPM 走向",
-    new_li2: "右下：按下/抬起時間線，同時按鍵清晰可見",
-    new_li3: "可切換樂器、拖動和縮放，功能不缺失",
-    new_li4: "修復匯出與懸浮視窗 BPM 刷新；僅更新 Windows，Android 保持 1.1.1",
-    alt_hero: "深色主題下的檢測器，顯示琴鍵、即時指標、BPM 圖和音符時長表",
-    alt_overlay: "全透明置頂懸浮窗，顯示琴鍵、BPM 走向和 MIDI 風格按鍵時間線",
-    alt_showcase1: "重新設計琴鍵後的深色主題介面",
-    alt_showcase2: "日語介面的檢測器",
-    download_eyebrow: "取得應用程式", download_title: "下載",
-    download_sub: "Windows 安裝包直接託管在本站；可攜版與 Android APK 來自 GitHub Releases。",
-    windows_title: "Windows", windows_desc: "Windows 10/11 64 位；安裝到目前使用者，無需管理員權限。",
-    windows_installer: "安裝程式 · 本站託管", windows_portable: "免安裝版",
-    windows_meta: "exe 未做程式碼簽章，SmartScreen 可能提示；選擇「更多資訊 → 仍要執行」即可。",
-    android_title: "Android", android_desc: "Android 7.0 及以上；包含內建更新檢查，1.1.0 起使用固定發佈簽章。",
-    android_apk: "APK", android_meta: "1.1.0 起固定簽章，後續版本可直接覆蓋；1.0.x 偵錯簽章使用者需先解除安裝一次。",
-    checksums: "SHA-256 校驗和", release_notes: "更新說明", all_releases: "全部版本",
-    security_eyebrow: "隱私與安全", security_title: "預設本機執行。",
-    s1_title: "無遙測", s1_text: "音訊不會離開你的電腦；沒有統計、帳號或雲端處理。",
-    s2_title: "受限的更新檢查", s2_text: "可選的 GitHub Releases HTTPS 查詢，12 秒逾時、512 KB 中繼資料上限、200 MB 安裝包上限。",
-    s3_title: "校驗後安裝", s3_text: "自動更新只從倉庫 Release 下載，校驗 SHA-256 與 PE 標頭後才執行安裝程式；預設關閉。",
-    s4_title: "Android 固定簽章", s4_text: "1.1.0 起所有 APK 使用同一發佈憑證，新版本可直接覆蓋舊版；應用程式內檢查會下載並校驗 APK。",
-    footer_tagline: "獨立同人工具，與 HoYoverse 無關聯；Genshin Impact 是 HoYoverse 的商標。",
-    footer_guide: "中文使用說明",
-    meta_title: "原神樂器演奏檢測器 — 看見每一個琴鍵",
-    meta_desc: "Windows / Android 即時原神樂器檢測：琴鍵、和弦、調性、音符時長與 BPM；五種介面語言、深/淺主題、置頂懸浮窗和更新檢查。"
-  },
-  "zh-TW": {
-    nav_features: "功能", nav_downloads: "下載", nav_security: "安全",
-    hero_eyebrow: "Windows 1.1.5 · Android 1.1.1",
-    hero_title: "聽見音符。<br><span>看見琴鍵。</span>",
-    hero_lede: "即時辨識《原神》六種可演奏樂器的檢測工具。監聽喇叭（或麥克風）輸出，顯示目前琴鍵與和弦，並測量調性、每個音的時長和 BPM。",
-    cta_windows: "下載 Windows 版", cta_android: "Android APK",
-    hero_fine: '免費 · 無遙測 · <a href="https://github.com/hutao48/genshinimpact-py.found" target="_blank" rel="noopener">GitHub 開源</a>',
-    features_eyebrow: "它能做什麼", features_title: "你演奏的一切，都被測量。",
-    f1_title: "六種樂器", f1_text: "風物之詩琴、鏡花之琴、躍律琴、諧律鍵琴、晚風圓號、悠可琴——分別還原 21/14/12 鍵配置。",
-    f2_title: "音符、和弦、調性", f2_text: "高亮目前按下的琴鍵，辨識和弦（C、Dm、Em、F、G、Am、G7…），並提供調性與信心值。",
-    f3_title: "毫秒級時長", f3_text: "每個音都有對齊起音的開始時間、時長、間隔和結束方式（放開按鍵/截止、同鍵重按或自然衰減）。",
-    f4_title: "跟隨演奏的 BPM", f4_text: "預設顯示 BPM 折線（可切換長條圖），縱軸自動縮放，支援 30 秒 / 1 分鐘 / 5 分鐘 / 全部範圍、懸停讀數和置頂懸浮視窗。",
-    f5_title: "邊界值檢查", f5_text: "標記超出手部極限的操作證據：同時超過 10 個鍵，或很長一段完全一致的間隔。",
-    f6_title: "離線分析", f6_text: "從命令列分析 WAV 錄音並產生完整報告，包括每秒 BPM 讀數。",
-    new_eyebrow: "1.1.5 新增 · Windows", new_title: "演奏資料，始終在視野內。",
-    new_text: "全透明、無邊框的置頂懸浮視窗：右上是即時 BPM 走向，右下是 MIDI 編輯器風格的按鍵時間線。橫條顯示每個鍵從按下到抬起，相鄰軌道可看出同時按下的鍵。懸浮視窗預設關閉，可從頂欄「懸浮視窗」按鈕開啟；仍可在懸浮視窗內切換樂器、拖曳標題列移動、右下角縮放。",
-    new_li1: "右上：即時 BPM 走向",
-    new_li2: "右下：按下/抬起時間線，同時按鍵清晰可見",
-    new_li3: "可切換樂器、拖曳和縮放，功能不缺失",
-    new_li4: "修復匯出與懸浮視窗 BPM 刷新；僅更新 Windows，Android 保持 1.1.1",
-    alt_hero: "深色主題下的檢測器，顯示琴鍵、即時指標、BPM 圖和音符時長表",
-    alt_overlay: "全透明置頂懸浮視窗，顯示琴鍵、BPM 走向和 MIDI 風格按鍵時間線",
-    alt_showcase1: "重新設計琴鍵後的深色主題介面",
-    alt_showcase2: "日語介面的檢測器",
-    download_eyebrow: "取得應用程式", download_title: "下載",
-    download_sub: "Windows 安裝包直接託管在本站；可攜版與 Android APK 來自 GitHub Releases。",
-    windows_title: "Windows", windows_desc: "Windows 10/11 64 位元；安裝到目前使用者，無需管理員權限。",
-    windows_installer: "安裝程式 · 本站託管", windows_portable: "免安裝版",
-    windows_meta: "exe 未做程式碼簽章，SmartScreen 可能提示；選擇「更多資訊 → 仍要執行」即可。",
-    android_title: "Android", android_desc: "Android 7.0 以上；包含內建更新檢查，1.1.0 起使用固定發佈簽章。",
-    android_apk: "APK", android_meta: "1.1.0 起固定簽章，後續版本可直接覆蓋；1.0.x 偵錯簽章使用者需先解除安裝一次。",
-    checksums: "SHA-256 校驗和", release_notes: "更新說明", all_releases: "全部版本",
-    security_eyebrow: "隱私與安全", security_title: "預設本機執行。",
-    s1_title: "無遙測", s1_text: "音訊不會離開你的電腦；沒有統計、帳號或雲端處理。",
-    s2_title: "受限的更新檢查", s2_text: "可選的 GitHub Releases HTTPS 查詢，12 秒逾時、512 KB 中繼資料上限、200 MB 安裝包上限。",
-    s3_title: "驗證後安裝", s3_text: "自動更新只從倉庫 Release 下載，驗證 SHA-256 與 PE 標頭後才執行安裝程式；預設關閉。",
-    s4_title: "Android 固定簽章", s4_text: "1.1.0 起所有 APK 使用同一發佈憑證，新版本可直接覆蓋舊版；應用程式內檢查會下載並驗證 APK。",
-    footer_tagline: "獨立同人工具，與 HoYoverse 無關聯；Genshin Impact 是 HoYoverse 的商標。",
-    footer_guide: "中文使用說明",
-    meta_title: "原神樂器演奏檢測器 — 看見每一個琴鍵",
-    meta_desc: "Windows / Android 即時原神樂器檢測：琴鍵、和弦、調性、音符時長與 BPM；五種介面語言、深/淺主題、置頂懸浮視窗和更新檢查。"
-  },
-  ja: {
-    nav_features: "機能", nav_downloads: "ダウンロード", nav_security: "セキュリティ",
-    hero_eyebrow: "Windows 1.1.5 · Android 1.1.1",
-    hero_title: "すべての音を聴き、<br><span>すべての鍵を見る。</span>",
-    hero_lede: "『原神』の演奏可能な 6 種類の楽器をリアルタイムに認識する検出ツール。スピーカー（またはマイク）の出力を聴き、押している鍵とコードを表示し、調性・各音の長さ・BPM を計測します。",
-    cta_windows: "Windows 版をダウンロード", cta_android: "Android APK",
-    hero_fine: '無料 · テレメトリーなし · <a href="https://github.com/hutao48/genshinimpact-py.found" target="_blank" rel="noopener">GitHub でオープンソース</a>',
-    features_eyebrow: "できること", features_title: "演奏のすべてを計測。",
-    f1_title: "6 種類の楽器", f1_text: "風物の詩琴、鏡花の琴、躍律琴、諧律鍵琴、晩風の円号、悠可琴——21/14/12 鍵の配置を再現。",
-    f2_title: "音符・コード・調性", f2_text: "現在押している鍵をハイライトし、コード（C、Dm、Em、F、G、Am、G7…）と調性・信頼度を表示します。",
-    f3_title: "ミリ秒単位の長さ", f3_text: "各音の発音開始に合わせた開始時刻、長さ、間隔、終了理由（離鍵/カット、同鍵の再押下、自然減衰）を記録します。",
-    f4_title: "演奏に追従する BPM", f4_text: "BPM は折れ線が既定（棒グラフに切替可）。自動スケール、30 秒 / 1 分 / 5 分 / 全体、ホバー読み取り、常時最前面のフローティング表示に対応。",
-    f5_title: "限界値チェック", f5_text: "人間の限界を超える操作の証拠を検出：同時に 10 鍵以上、または非常に長い完全一致の間隔。",
-    f6_title: "オフライン解析", f6_text: "コマンドラインから WAV 録音を解析し、毎秒の BPM を含む完全なレポートを出力します。",
-    new_eyebrow: "1.1.5 の新機能 · Windows", new_title: "演奏データを、常に視界に。",
-    new_text: "完全透明・枠なしの常時最前面フローティングウィンドウ。右上にリアルタイム BPM の推移、右下に MIDI エディタ風のキー・タイムラインを表示します。横バーは各キーの押下から離鍵までを示し、同時押しは隣のレーンに並びます。フローティングは既定で非表示。ツールバーの「フローティング」ボタンから開けます。楽器切替・ヘッダードラッグ・右下リサイズも維持。",
-    new_li1: "右上：リアルタイム BPM の推移",
-    new_li2: "右下：押下/離鍵タイムライン、同時押しも表示",
-    new_li3: "楽器切替・ドラッグ・リサイズを維持",
-    new_li4: "エクスポートと BPM 更新を修正。Windows のみ更新、Android は 1.1.1 のまま",
-    alt_hero: "ダークテーマで動作中の検出器。鍵盤、リアルタイム指標、BPM グラフ、音符の長さ一覧を表示",
-    alt_overlay: "鍵盤・BPM 推移・MIDI 風キー・タイムラインを表示する全透明の常時最前面フローティングウィンドウ",
-    alt_showcase1: "新しい鍵盤デザインのダークテーマ画面",
-    alt_showcase2: "日本語インターフェースの検出器",
-    download_eyebrow: "アプリを入手", download_title: "ダウンロード",
-    download_sub: "Windows インストーラーはこのサイトで直接ホストしています。ポータブル版と Android APK は GitHub Releases から配布します。",
-    windows_title: "Windows", windows_desc: "Windows 10/11 64 ビット。現在のユーザーにインストールされ、管理者権限は不要です。",
-    windows_installer: "インストーラー · このサイトで配布", windows_portable: "ポータブル版",
-    windows_meta: "exe はコード署名されていないため、SmartScreen が表示される場合があります。「詳細情報 → 実行」を選択してください。",
-    android_title: "Android", android_desc: "Android 7.0 以上。アプリ内更新チェックと、1.1.0 以降の固定リリース署名を含みます。",
-    android_apk: "APK", android_meta: "1.1.0 以降は固定署名のため、以後のバージョンを上書きインストールできます。1.0.x のデバッグ署名版からは一度アンインストールが必要です。",
-    checksums: "SHA-256 チェックサム", release_notes: "リリースノート", all_releases: "すべてのリリース",
-    security_eyebrow: "プライバシーとセキュリティ", security_title: "既定でローカル動作。",
-    s1_title: "テレメトリーなし", s1_text: "音声が PC の外へ送られることはありません。解析・アカウント・クラウド処理はありません。",
-    s2_title: "制限された更新確認", s2_text: "任意の GitHub Releases HTTPS 問い合わせ。12 秒タイムアウト、メタデータ 512 KB、インストーラー 200 MB の上限付き。",
-    s3_title: "検証してからインストール", s3_text: "自動更新はリポジトリの Release からのみダウンロードし、公開 SHA-256 と PE ヘッダーを検証してからインストーラーを実行します。既定はオフ。",
-    s4_title: "Android 固定署名", s4_text: "1.1.0 以降、すべての APK が同じリリース証明書で署名されるため、新バージョンを上書きインストールできます。アプリ内チェックも APK を検証します。",
-    footer_tagline: "非公式のファンツールです。HoYoverse とは無関係です。Genshin Impact は HoYoverse の商標です。",
-    footer_guide: "中文使用説明",
-    meta_title: "原神楽器演奏検出器 — すべての鍵を見る",
-    meta_desc: "Windows / Android 向けリアルタイム原神楽器検出。鍵盤、コード、調性、音符の長さ、BPM。5 言語、ダーク/ライトテーマ、常時最前面ウィンドウ、更新チェック。"
-  }
-};
+<div class="build-meter" id="build-meter" aria-hidden="true">
+  <span class="mono" data-i18n="build_label">SECTIONS</span>
+  <span class="mono build-count" id="build-count">00 / 04</span>
+  <span class="build-track"><i id="build-fill"></i></span>
+</div>
+<div class="auto-cursor" id="auto-cursor" aria-hidden="true">
+  <svg viewBox="0 0 20 24" width="20" height="24"><path d="M2 2l15 9-7 2-3 7z" fill="#f2efe6" stroke="#08090b" stroke-width="1.5"/></svg>
+</div>
+<div class="auto-marquee" id="auto-marquee" aria-hidden="true"><span id="auto-size" class="mono">0 × 0</span></div>
 
-const LANG_INFO = {
-  "zh-CN": { label: "简体中文", flag: "assets/flags/cn.svg", emoji: "🇨🇳" },
-  "zh-Hant": { label: "繁體中文（香港）", flag: "assets/flags/hk.svg", emoji: "🇭🇰" },
-  "zh-TW": { label: "正體中文（臺灣）", flag: "assets/flags/tw.svg", emoji: "🇹🇼" },
-  en: { label: "English", flag: "assets/flags/us.svg", emoji: "🇺🇸" },
-  ja: { label: "日本語", flag: "assets/flags/jp.svg", emoji: "🇯🇵" }
-};
-const langPicker = document.getElementById("lang-picker");
-const langButton = document.getElementById("lang-button");
-const langMenu = document.getElementById("lang-menu");
-const langFlag = document.getElementById("lang-flag");
-const langLabel = document.getElementById("lang-label");
-const metaDesc = document.querySelector('meta[name="description"]');
-
-function closeLangMenu() {
-  langMenu.classList.remove("open");
-  langButton.setAttribute("aria-expanded", "false");
-}
-
-function applyLanguage(lang) {
-  if (!I18N[lang]) lang = "en";
-  const dict = I18N[lang];
-  document.documentElement.lang = lang;
-  document.querySelectorAll("[data-i18n]").forEach((el) => {
-    const key = el.getAttribute("data-i18n");
-    if (dict[key] !== undefined) el.textContent = dict[key];
-  });
-  document.querySelectorAll("[data-i18n-html]").forEach((el) => {
-    const key = el.getAttribute("data-i18n-html");
-    if (dict[key] !== undefined) el.innerHTML = dict[key];
-  });
-  document.querySelectorAll("[data-i18n-alt]").forEach((el) => {
-    const key = el.getAttribute("data-i18n-alt");
-    if (dict[key] !== undefined) el.alt = dict[key];
-  });
-  document.title = dict.meta_title || document.title;
-  if (metaDesc) metaDesc.setAttribute("content", dict.meta_desc || "");
-  const info = LANG_INFO[lang];
-  langFlag.src = info.flag;
-  langFlag.alt = info.emoji;
-  langLabel.textContent = info.label;
-  langButton.setAttribute("aria-label", info.emoji + " " + info.label);
-  document.querySelectorAll(".lang-option").forEach((el) => {
-    el.setAttribute("aria-selected", el.getAttribute("data-lang") === lang ? "true" : "false");
-  });
-  try { localStorage.setItem("gid-lang", lang); } catch (e) {}
-}
-
-function initialLanguage() {
-  try {
-    const query = new URLSearchParams(location.search).get("lang");
-    if (query && I18N[query]) return query;
-  } catch (e) {}
-  try {
-    const saved = localStorage.getItem("gid-lang");
-    if (saved && I18N[saved]) return saved;
-  } catch (e) {}
-  const nav = (navigator.language || "en").toLowerCase();
-  if (nav.startsWith("ja")) return "ja";
-  if (nav === "zh-tw" || nav === "zh-hk" || nav.includes("hant")) return "zh-TW";
-  if (nav.startsWith("zh")) return "zh-CN";
-  return "en";
-}
-
-langButton.addEventListener("click", () => {
-  const open = langMenu.classList.toggle("open");
-  langButton.setAttribute("aria-expanded", open ? "true" : "false");
-});
-langMenu.querySelectorAll(".lang-option").forEach((el) => {
-  el.addEventListener("click", () => {
-    applyLanguage(el.getAttribute("data-lang"));
-    closeLangMenu();
-  });
-});
-document.addEventListener("click", (e) => {
-  if (!langPicker.contains(e.target)) closeLangMenu();
-});
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") closeLangMenu();
-});
-applyLanguage(initialLanguage());
-</script>
+<script src="app.js" defer></script>
 </body>
 </html>
